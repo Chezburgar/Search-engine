@@ -1,4 +1,9 @@
 import { settings } from './store.js';
+import { STATIC, CONFIG } from './routes.js';
+
+// On GitHub Pages there is no server: an in-browser backend answers the same calls.
+let backendPromise;
+const backend = () => (backendPromise ||= import('../static/backend.js').then((m) => m.createBackend(CONFIG)));
 
 const withParams = (path, params = {}) => {
   const u = new URL(path, location.origin);
@@ -7,6 +12,7 @@ const withParams = (path, params = {}) => {
 };
 
 export async function getJSON(path, params, { signal } = {}) {
+  if (STATIC) return (await backend()).json(path, params || {}, signal);
   const res = await fetch(withParams(path, params), { signal, headers: { Accept: 'application/json' } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
@@ -15,6 +21,7 @@ export async function getJSON(path, params, { signal } = {}) {
 
 // Reads a text/event-stream response and calls onEvent(name, data) per event.
 export async function stream(path, { params, body, signal, onEvent }) {
+  if (STATIC) return (await backend()).stream(path, { params: params || {}, body, signal, onEvent });
   const res = await fetch(withParams(path, params), {
     method: body ? 'POST' : 'GET',
     headers: body

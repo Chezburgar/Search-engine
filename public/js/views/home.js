@@ -2,6 +2,7 @@ import { h, icon } from '../lib/dom.js';
 import { createSearchBox } from '../components/searchbox.js';
 import { createSettingsMenu } from '../components/panels.js';
 import { settings } from '../lib/store.js';
+import { searchUrl } from '../lib/routes.js';
 
 const IDEAS = [
   'How do black holes form?',
@@ -32,7 +33,7 @@ export function renderHome(root, { go, onSettings }) {
           h(
             'a',
             {
-              href: '/search?q=today%27s+top+stories&tab=news',
+              href: searchUrl("today's top stories", 'news'),
               on: { click: (e) => (e.preventDefault(), go("today's top stories", 'news')) },
             },
             'News'
@@ -40,7 +41,7 @@ export function renderHome(root, { go, onSettings }) {
           h(
             'a',
             {
-              href: '/search?q=nature+photography&tab=images',
+              href: searchUrl('nature photography', 'images'),
               on: { click: (e) => (e.preventDefault(), go('nature photography', 'images')) },
             },
             'Images'
@@ -54,7 +55,7 @@ export function renderHome(root, { go, onSettings }) {
         h(
           'h1',
           { class: 'brand' },
-          h('img', { class: 'brand__mark', src: '/assets/spark-mark.png', alt: '', width: 96, height: 83 }),
+          h('img', { class: 'brand__mark', src: 'assets/spark-mark.png', alt: '', width: 96, height: 83 }),
           h('span', { class: 'brand__word' }, 'Spark')
         ),
         h('p', { class: 'home__tagline' }, 'Search the web with a spark of intelligence.'),

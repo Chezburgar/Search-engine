@@ -231,6 +231,10 @@ async function mockFetch(input, init = {}) {
       ],
     ]);
   }
+  if (host.endsWith('wikipedia.org') && url.searchParams.get('action') === 'opensearch') {
+    const q = url.searchParams.get('search');
+    return json([q, ['Black hole', 'Black hole information paradox', 'Black Hole Sun', 'Black holes in fiction']]);
+  }
   if (host.endsWith('wikipedia.org') && url.pathname === '/w/api.php') {
     return json({
       query: {

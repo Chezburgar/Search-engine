@@ -63,11 +63,7 @@ export function createSearchBox({ value = '', compact = false, autofocus = false
     ),
     list
   );
-  const form = h(
-    'form',
-    { class: `searchbox${compact ? ' searchbox--compact' : ''}`, role: 'search', action: '/search' },
-    panel
-  );
+  const form = h('form', { class: `searchbox${compact ? ' searchbox--compact' : ''}`, role: 'search' }, panel);
 
   const submit = (q, tab) => {
     q = (q ?? input.value).trim();

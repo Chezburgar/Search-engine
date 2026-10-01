@@ -1,5 +1,6 @@
 import { h, icon } from './lib/dom.js';
 import { aiStatus } from './lib/api.js';
+import { searchUrl, homeUrl, isResultsPage } from './lib/routes.js';
 import { settings, recent } from './lib/store.js';
 import { createSearchBox } from './components/searchbox.js';
 import { createSettingsMenu, installCitationTips } from './components/panels.js';
@@ -43,14 +44,12 @@ function applyTheme() {
 function parseLocation() {
   const url = new URL(location.href);
   const q = (url.searchParams.get('q') || '').trim();
-  if (url.pathname === '/search' && q) {
+  if (isResultsPage(url)) {
     const tab = TABS.some((t) => t.id === url.searchParams.get('tab')) ? url.searchParams.get('tab') : 'all';
     return { view: 'results', q, tab };
   }
   return { view: 'home' };
 }
-
-const searchUrl = (q, tab = 'all') => `/search?q=${encodeURIComponent(q)}${tab !== 'all' ? `&tab=${tab}` : ''}`;
 
 export function go(q, tab = 'all', { replace = false } = {}) {
   const url = searchUrl(q, tab);
@@ -98,17 +97,17 @@ function buildShell() {
         'a',
         {
           class: 'topbar__brand',
-          href: '/',
+          href: homeUrl(),
           'aria-label': 'Spark home',
           on: {
             click: (e) => {
               e.preventDefault();
-              history.pushState(null, '', '/');
+              history.pushState(null, '', homeUrl());
               render();
             },
           },
         },
-        h('img', { src: '/assets/spark-mark.png', alt: '', width: 36, height: 31 }),
+        h('img', { src: 'assets/spark-mark.png', alt: '', width: 36, height: 31 }),
         h('span', { class: 'wordmark' }, 'Spark')
       ),
       searchbox.el,

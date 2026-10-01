@@ -10,7 +10,7 @@
 ## Features
 
 **Search**
-- Web results with favicons, breadcrumbs, highlighted matches and "More results" pagination
+- Web results from [Keenable](https://keenable.ai) with favicons, breadcrumbs, query-focused snippets and "More results" pagination
 - Autocomplete with recent searches, keyboard navigation and voice search
 - Knowledge panels from Wikipedia
 - Instant answers: a full calculator for math queries, and a live 7-day forecast for "weather in …" queries
@@ -47,7 +47,8 @@ npm start                 # http://localhost:3000
 | `XAI_API_KEY` | **Required for AI features.** Your key from [console.x.ai](https://console.x.ai). |
 | `XAI_MODEL` | Optional. Pins a Grok model. If unset, Spark picks the newest *fast* Grok model your key can use. |
 | `XAI_CHAT_MODEL` | Optional. A different model for the Spark AI chat tab, e.g. a larger reasoning model. |
-| `BRAVE_API_KEY` | Optional. [Brave Search API](https://brave.com/search/api/) key for higher-quality web, news and image results. |
+| `KEENABLE_API_KEY` | Recommended. [Keenable](https://keenable.ai) web search key. Without one, Spark uses Keenable's keyless endpoint (rate limited per IP), then DuckDuckGo, Bing and Wikipedia. |
+| `BRAVE_API_KEY` | Optional. [Brave Search API](https://brave.com/search/api/) key; when set it is tried before Keenable and also powers news and images. |
 | `PORT` / `HOST` | Where to listen (default `3000` / `0.0.0.0`). |
 | `SPARK_REGION` | Result region and language, e.g. `us-en`, `uk-en`, `de-de`. |
 | `AI_RATE_LIMIT` | Max AI requests per visitor IP per 10 minutes (default 120). |
@@ -62,7 +63,7 @@ Browser (vanilla JS, no build step)
   │
   ├── /api/search, /api/news, /api/images, /api/suggest, /api/knowledge
   │       └─ provider chains with automatic fallback and in-memory caching
-  │            web:    Brave (if keyed) → DuckDuckGo → Bing → Wikipedia
+  │            web:    Brave (if keyed) → Keenable → DuckDuckGo → Bing → Wikipedia
   │            news:   Brave (if keyed) → Google News RSS → Bing News RSS
   │            images: Brave (if keyed) → Openverse → Wikimedia Commons
   │            weather: Open-Meteo, knowledge: Wikipedia
@@ -71,9 +72,35 @@ Browser (vanilla JS, no build step)
           └─ search → fetch and trim top pages → numbered sources → Grok (streamed)
 ```
 
-- **Grounded answers.** The AI never answers from a bare prompt. The server gathers numbered sources (snippets plus the most relevant passages of the top pages, fetched within a 2.5 s budget) and Grok cites them inline as `[n]`.
+- **Grounded answers.** The AI never answers from a bare prompt. Spark gathers numbered sources (Keenable returns page text with each result; for other providers the top pages are fetched within a 2.5 s budget), keeps the passages most relevant to the query, and Grok cites them inline as `[n]`.
 - **Model choice.** On startup Spark lists the models your key can use and ranks them, preferring fast, non-reasoning, newer models so overviews start streaming quickly. If a model is retired, it automatically retries with the next best one.
 - **Safety.** Page fetching for summaries blocks private and internal addresses (SSRF protection, re-checked on every redirect). AI output is rendered by a small Markdown renderer that escapes all HTML. Strict CSP and security headers are set, AI endpoints are rate-limited per IP, and repeated questions are served from cache.
+
+## GitHub Pages (static) version
+
+GitHub Pages can only host static files, so the Pages build has no server: an in-browser
+backend (`public/js/static/backend.js`) answers the same `/api/*` calls by calling
+Keenable, Grok, Wikipedia, Open-Meteo and Openverse directly from the visitor's browser.
+
+```bash
+npm run deploy:pages          # builds dist/ and force-pushes it to the gh-pages branch
+npm run build:pages           # just build dist/ (serve it with any static server)
+```
+
+The site is published at the URL in `package.json` → `homepage`
+(https://chezburgar.github.io/Search-engine/). If Pages isn't on yet: repository
+**Settings → Pages → Build and deployment → Deploy from a branch → `gh-pages` / root**.
+
+> **The keys are public on Pages.** The build writes `XAI_API_KEY` and `KEENABLE_API_KEY`
+> from `.env` into `dist/spark-config.js`, which every visitor downloads. Anyone can copy
+> them and use your quota. Use keys you're comfortable sharing, set spending limits, and
+> rotate them if they're abused. `npm run deploy:pages -- --no-keys` publishes without
+> keys (search keeps working through Keenable's keyless endpoint; AI features turn off).
+> For private keys, run the Node server instead (see Deploying).
+
+Compared with the server, the static build has no DuckDuckGo/Bing fallback (Wikipedia
+is the fallback), takes suggestions from Wikipedia, gets news from Keenable, has no
+per-visitor rate limiting, and needs the APIs to accept browser (CORS) requests.
 
 ## Project layout
 
@@ -89,7 +116,10 @@ public/
   js/app.js           router and app shell
   js/views/           home, all results, Spark AI, images, news
   js/components/      search box, AI overview, results, panels, widgets
-  js/lib/             DOM helpers, API/SSE client, Markdown, calculator
+  js/lib/             DOM helpers, API/SSE client, routes, Markdown, calculator
+  js/shared/          logic shared by the server and the static build (prompts, Grok client, parsers)
+  js/static/          in-browser backend used by the GitHub Pages build
+scripts/              build and deploy the GitHub Pages version
 test/                 unit and end-to-end API tests (upstreams mocked)
 ```
 

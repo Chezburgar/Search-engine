@@ -2,6 +2,7 @@ import { h, icon, fill } from '../lib/dom.js';
 import { streamAnswer } from './answer.js';
 import { sourceChip } from './overview.js';
 import { safe } from '../lib/api.js';
+import { searchUrl } from '../lib/routes.js';
 
 /* ----------------------------- Knowledge panel ---------------------------- */
 
@@ -140,7 +141,7 @@ export function createRelatedSearches(q, suggestions, { onSearch }) {
           'a',
           {
             class: 'related__item',
-            href: `/search?q=${encodeURIComponent(s)}`,
+            href: searchUrl(s),
             on: {
               click: (e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey) return;

@@ -8,10 +8,13 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build:pages": "node scripts/build-pages.mjs",
+    "deploy:pages": "bash scripts/deploy-pages.sh"
   },
   "engines": {
     "node": ">=20.3"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://chezburgar.github.io/Search-engine/"
 }

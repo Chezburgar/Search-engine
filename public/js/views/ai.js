@@ -5,6 +5,7 @@ import { renderInto, toPlainText } from '../lib/markdown.js';
 import { favicon, siteName } from '../lib/format.js';
 import { loadingBlock } from '../components/overview.js';
 import { emptyState } from './all.js';
+import { searchUrl, STATIC } from '../lib/routes.js';
 
 const STAGES = { searching: 'Searching the web', reading: 'Reading sources', writing: 'Writing' };
 
@@ -28,7 +29,9 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
     root.replaceChildren(
       emptyState({
         title: 'Spark AI is not configured',
-        text: 'Add your xAI API key as XAI_API_KEY in the .env file and restart the server to chat with Spark.',
+        text: STATIC
+          ? 'This site was published without an xAI key, so the AI chat is unavailable.'
+          : 'Add your xAI API key as XAI_API_KEY in the .env file and restart the server to chat with Spark.',
         actions: [
           h(
             'button',
@@ -153,7 +156,7 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
           'a',
           {
             class: 'chip chip--quiet chip--sm',
-            href: `/search?q=${encodeURIComponent(turn.q)}`,
+            href: searchUrl(turn.q),
             on: { click: (e) => (e.preventDefault(), go(turn.q)) },
           },
           icon('search'),

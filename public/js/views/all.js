@@ -2,6 +2,7 @@ import { h, icon, clear, progress } from '../lib/dom.js';
 import { getJSON, safe } from '../lib/api.js';
 import { settings } from '../lib/store.js';
 import { looksLikeMath } from '../lib/calc.js';
+import { STATIC } from '../lib/routes.js';
 import { createResult, resultSkeleton } from '../components/result.js';
 import { createOverview } from '../components/overview.js';
 import { createKnowledgePanel, createPeopleAlsoAsk, createRelatedSearches } from '../components/panels.js';
@@ -13,7 +14,7 @@ export function emptyState({ title, text, actions = [] }) {
   return h(
     'div',
     { class: 'empty' },
-    h('img', { class: 'empty__mark', src: '/assets/spark-mark.png', alt: '', width: 72, height: 62 }),
+    h('img', { class: 'empty__mark', src: 'assets/spark-mark.png', alt: '', width: 72, height: 62 }),
     h('h2', {}, title),
     text ? h('p', {}, text) : null,
     actions.length ? h('div', { class: 'empty__actions' }, actions) : null
@@ -102,11 +103,15 @@ export async function renderAll(root, { q, signal, go, ai, openChat }) {
           'p',
           {},
           h('b', {}, 'Spark AI is off. '),
-          'Add your xAI key as ',
-          h('code', {}, 'XAI_API_KEY'),
-          ' in ',
-          h('code', {}, '.env'),
-          ' to get AI overviews, chat and summaries.'
+          STATIC
+            ? "This site was published without an xAI key, so AI overviews, chat and summaries aren't available."
+            : [
+                'Add your xAI key as ',
+                h('code', {}, 'XAI_API_KEY'),
+                ' in ',
+                h('code', {}, '.env'),
+                ' to get AI overviews, chat and summaries.',
+              ]
         )
       )
     );
