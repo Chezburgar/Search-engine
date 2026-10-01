@@ -517,7 +517,7 @@ const MIME = {
 const gzipCache = new Map();
 
 function serveStatic(req, res, pathname) {
-  let rel = pathname === '/' || pathname === '/search' || pathname === '/grades' ? '/index.html' : pathname;
+  let rel = ['/', '/search', '/grades', '/games'].includes(pathname) ? '/index.html' : pathname;
   let file;
   try {
     rel = decodeURIComponent(rel);

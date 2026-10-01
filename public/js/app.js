@@ -1,6 +1,6 @@
 import { h, icon } from './lib/dom.js';
 import { aiStatus } from './lib/api.js';
-import { searchUrl, homeUrl, isResultsPage, gradesUrl, isGradesPage } from './lib/routes.js';
+import { searchUrl, homeUrl, isResultsPage, gradesUrl, isGradesPage, gamesUrl, isGamesPage } from './lib/routes.js';
 import { settings, recent } from './lib/store.js';
 import { createSearchBox } from './components/searchbox.js';
 import { createSettingsMenu, installCitationTips } from './components/panels.js';
@@ -17,8 +17,9 @@ import { connectExtension } from './tabs/extension.js';
 // ?page=assistant: just the assistant, full-height (the Chrome extension's side panel).
 const EMBEDDED = new URL(location.href).searchParams.get('page') === 'assistant';
 
-// Spark Grades loads on first visit only.
+// Spark Grades and Games load on first visit only.
 const renderGrades = (...args) => import('./views/grades.js').then((m) => m.renderGrades(...args));
+const renderGames = (...args) => import('./views/games.js').then((m) => m.renderGames(...args));
 
 const app = document.getElementById('app');
 const TABS = [
@@ -66,6 +67,7 @@ function parseLocation() {
   const q = (url.searchParams.get('q') || '').trim();
   if (EMBEDDED) return { view: 'assistant' };
   if (isGradesPage(url)) return { view: 'grades' };
+  if (isGamesPage(url)) return { view: 'games' };
   if (isResultsPage(url)) {
     const tab = TABS.some((t) => t.id === url.searchParams.get('tab')) ? url.searchParams.get('tab') : 'all';
     return { view: 'results', q, tab };
@@ -84,6 +86,11 @@ function goGrades(params = {}, { replace = false } = {}) {
   const url = gradesUrl(params);
   if (replace) history.replaceState(null, '', url);
   else history.pushState(null, '', url);
+  render();
+}
+
+function goGames(params = {}) {
+  history.pushState(null, '', gamesUrl(params));
   render();
 }
 
@@ -206,7 +213,7 @@ function render() {
     shell = null;
     setTitle('Spark');
     document.body.dataset.view = 'home';
-    renderHome(app, { go, goGrades, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
+    renderHome(app, { go, goGrades, goGames, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
     return;
   }
 
@@ -218,6 +225,17 @@ function render() {
       ai.enabled
         ? ''
         : h('p', { class: 'assist-off' }, 'Spark AI isn’t set up on this site, so the assistant isn’t available.')
+    );
+    return;
+  }
+
+  if (loc.view === 'games') {
+    shell = null;
+    document.body.dataset.view = 'games';
+    setTitle('Spark Games');
+    window.scrollTo({ top: 0 });
+    renderGames(app, { signal: pageController.signal, navigate: goGames, home: goHome }).then(() =>
+      setTitle(document.title)
     );
     return;
   }

@@ -29,3 +29,15 @@ export function gradesUrl(params = {}) {
 export function isGradesPage(url = new URL(location.href)) {
   return STATIC ? url.searchParams.get('page') === 'grades' : url.pathname.endsWith('/grades');
 }
+
+// Spark Games: /games on the server, ?page=games on Pages (g = the game being played).
+export function gamesUrl(params = {}) {
+  const p = new URLSearchParams(STATIC ? { page: 'games' } : {});
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, v);
+  const qs = p.toString();
+  return `${ROOT}${STATIC ? '' : 'games'}${qs ? `?${qs}` : ''}`;
+}
+
+export function isGamesPage(url = new URL(location.href)) {
+  return STATIC ? url.searchParams.get('page') === 'games' : url.pathname.endsWith('/games');
+}

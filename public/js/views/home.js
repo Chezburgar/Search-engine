@@ -2,7 +2,7 @@ import { h, icon } from '../lib/dom.js';
 import { createSearchBox } from '../components/searchbox.js';
 import { createSettingsMenu } from '../components/panels.js';
 import { settings } from '../lib/store.js';
-import { searchUrl, gradesUrl } from '../lib/routes.js';
+import { searchUrl, gradesUrl, gamesUrl } from '../lib/routes.js';
 import { aiLabel } from '../lib/api.js';
 
 const IDEAS = [
@@ -16,7 +16,7 @@ const IDEAS = [
   'Compare Python vs JavaScript for beginners',
 ];
 
-export function renderHome(root, { go, goGrades, onSettings, onImage }) {
+export function renderHome(root, { go, goGrades, goGames, onSettings, onImage }) {
   const box = createSearchBox({ autofocus: true, onSubmit: (q, tab) => go(q, tab), onImage });
   const ideas = [...IDEAS].sort(() => Math.random() - 0.5).slice(0, 4);
 
@@ -56,6 +56,16 @@ export function renderHome(root, { go, goGrades, onSettings, onImage }) {
             },
             icon('cap'),
             'Grades'
+          ),
+          h(
+            'a',
+            {
+              class: 'home__grades home__games',
+              href: gamesUrl(),
+              on: { click: (e) => (e.preventDefault(), goGames()) },
+            },
+            icon('gamepad'),
+            'Games'
           )
         ),
         createSettingsMenu({ settings, onChange: onSettings })

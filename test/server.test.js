@@ -244,6 +244,9 @@ test('static files are served safely', async () => {
 });
 
 test('Spark Grades: /grades serves the app and /api/studentvue relays to MCPS only', async () => {
+  const games = await fetch(`${base}/games?g=bitlife`);
+  assert.equal(games.status, 200);
+  assert.match(await games.text(), /<div id="app">/);
   const page = await fetch(`${base}/grades?g=schedule`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /<div id="app">/);

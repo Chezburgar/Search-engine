@@ -3672,6 +3672,534 @@ body[data-view='assistant'] {
 }
 
 /* ==========================================================================
+   Spark Games
+   ========================================================================== */
+
+.home__links .home__games .icon {
+  color: var(--blue);
+}
+
+.gm-top {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+}
+
+body.has-stabs .gm-top {
+  top: var(--stabs-h);
+}
+
+.gm-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, 100%);
+  height: 40px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.gm-search:focus-within {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgb(242 106 26 / 0.15);
+}
+
+.gm-search .icon {
+  flex: none;
+  width: 17px;
+  height: 17px;
+}
+
+.gm-search__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+}
+
+.gm-main {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 26px 22px 72px;
+}
+
+.gm-hero__title {
+  margin: 0;
+  background: var(--spark);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.gm-hero__sub {
+  margin: 6px 0 22px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.gm-h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 15.5px;
+  font-weight: 750;
+}
+
+.gm-h2 .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--magenta);
+}
+
+.gm-recent {
+  margin-bottom: 26px;
+}
+
+.gm-recent__row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.gm-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s var(--ease);
+}
+
+.gm-mini:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+.gm-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.gm-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gm-chips .chip.is-active {
+  border-color: transparent;
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.gm-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px;
+}
+
+.gm-none {
+  color: var(--muted);
+}
+
+.gm-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    transform 0.2s var(--ease),
+    box-shadow 0.2s;
+}
+
+.gm-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-2);
+}
+
+.gm-card:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+.gm-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+}
+
+.gm-tile__emoji {
+  font-size: 56px;
+  line-height: 1;
+  filter: drop-shadow(0 6px 14px rgb(0 0 0 / 0.25));
+}
+
+.gm-tile.has-img .gm-tile__emoji {
+  visibility: hidden;
+}
+
+.gm-tile__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gm-tile__img--cover {
+  object-fit: cover;
+}
+
+.gm-tile__img--contain {
+  padding: 14%;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgb(0 0 0 / 0.3));
+}
+
+.gm-tile--mini {
+  width: 52px;
+  border-radius: 10px;
+  aspect-ratio: 1;
+}
+
+.gm-tile--mini .gm-tile__emoji {
+  font-size: 24px;
+}
+
+.gm-tile--mini .gm-tile__img--contain {
+  padding: 10%;
+}
+
+.gm-tile--big {
+  width: 128px;
+  border-radius: 28px;
+  aspect-ratio: 1;
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.5);
+}
+
+.gm-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 16px;
+}
+
+.gm-card__name {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.gm-card__blurb {
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.gm-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.gm-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--spark-soft);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.gm-card__host {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.gm-card__play {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0 0 0 3px;
+  border-radius: 50%;
+  background: var(--spark);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.85);
+  box-shadow: 0 8px 20px -6px rgb(192 18 100 / 0.6);
+  transition:
+    opacity 0.2s,
+    transform 0.2s var(--ease);
+}
+
+.gm-card__play .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.gm-card:hover .gm-card__play,
+.gm-card:focus-visible .gm-card__play {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---- playing ---- */
+
+.gm--playing {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+
+body.has-stabs .gm--playing {
+  height: calc(100dvh - var(--stabs-h));
+}
+
+body[data-view='games']:has(.gm--playing) {
+  overflow: hidden;
+}
+
+/* Games use the whole frame, corners included. */
+body[data-view='games']:has(.gm--playing) .assist-fab {
+  display: none;
+}
+
+.gm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.gm-back:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.gm-back .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.gm-now {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.gm-now__name {
+  overflow: hidden;
+  font-size: 15.5px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gm-now__host {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gm-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.gm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.gm-btn:hover {
+  border-color: transparent;
+  background: var(--spark-soft);
+}
+
+.gm-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.gm-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+
+.gm-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.gm-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: radial-gradient(600px 400px at 50% 40%, rgb(242 106 26 / 0.18), transparent 70%), #0e0c12;
+  color: #f4f0f8;
+  font-weight: 650;
+  transition: opacity 0.4s;
+}
+
+.gm-loading.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gm-loading p {
+  margin: 0;
+}
+
+.gm-loading__hint {
+  color: #9d95a8;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+@media (max-width: 760px) {
+  .gm-top {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 10px 14px;
+  }
+
+  .gm-search {
+    order: 9;
+    width: 100%;
+    margin: 0;
+  }
+
+  .gm--playing .gm-top {
+    flex-wrap: nowrap;
+  }
+
+  .gm--playing .gr-brand .wordmark,
+  .gm--playing .gr-brand__tag,
+  .gm-back span:not(.icon),
+  .gm-btn span:not(.icon) {
+    display: none;
+  }
+
+  .gm-btn {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .gm-main {
+    padding: 18px 16px 60px;
+  }
+
+  .gm-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+  }
+
+  .gm-card__blurb {
+    display: none;
+  }
+
+  .gm-card__host {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-left: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .gm-card__play {
+    opacity: 1;
+    transform: none;
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* ==========================================================================
    Spark Grades (MCPS StudentVUE)
    Grade colours come from the logo: A blue, B orchid, C amber, D orange, E berry.
    ========================================================================== */
