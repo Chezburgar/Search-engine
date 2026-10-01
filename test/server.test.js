@@ -321,4 +321,6 @@ test('page text and the tab assistant on the server', async () => {
 
   const home = await fetch(`${base}/`);
   assert.match(home.headers['content-security-policy'], /frame-src https: http:/);
+  assert.match(home.headers['content-security-policy'], /frame-ancestors 'self' chrome-extension:/);
+  assert.equal(home.headers['x-frame-options'], undefined);
 });

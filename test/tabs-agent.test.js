@@ -291,3 +291,57 @@ test('static assistant: close all tabs, open top results, summarize — through 
     /isn't set up/
   );
 });
+
+test('Chrome-tab mode: its own tools, prompt and validation', async () => {
+  const browserNames = [...agent.toolNames('browser')];
+  assert.deepEqual(browserNames, [
+    'list_tabs',
+    'read_tab',
+    'open_tab',
+    'navigate_tab',
+    'switch_tab',
+    'close_tabs',
+    'find_in_tab',
+    'group_tabs',
+    'search_web',
+  ]);
+  const prompt = agent.agentSystemPrompt(
+    agent.sanitizeTabList([
+      { id: 41, title: 'Spark Assistant', url: 'https://x/', active: true, window: 1, self: true },
+      { id: 42, title: 'Gmail', url: 'https://mail.google.com/', window: 1 },
+    ]),
+    'browser'
+  );
+  assert.match(prompt, /real Chrome tabs/);
+  assert.match(prompt, /- 41 \(active\) \(this Spark assistant — never close it\) \[window 1\]: Spark Assistant/);
+  assert.match(prompt, /Read only the tabs the request is about/);
+
+  const groupCall = [
+    { role: 'user', content: 'group my tabs' },
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{ id: 'g1', type: 'function', function: { name: 'group_tabs', arguments: '{"tab_ids":[42]}' } }],
+    },
+  ];
+  assert.ok(agent.sanitizeAgentMessages(groupCall, 'browser'));
+  // Each mode only accepts its own tools.
+  assert.equal(agent.sanitizeAgentMessages(groupCall, 'spark'), null);
+  const showSearch = structuredClone(groupCall);
+  showSearch[1].tool_calls[0].function.name = 'show_search';
+  assert.equal(agent.sanitizeAgentMessages(showSearch, 'browser'), null);
+
+  const backend = createBackend({ mode: 'static', aiKey: 'gsk_test' });
+  const res = await backend.json('/api/agent', {
+    mode: 'browser',
+    messages: [{ role: 'user', content: 'Group my tabs by topic' }],
+    tabs: [{ id: 42, title: 'Gmail', url: 'https://mail.google.com/' }],
+  });
+  assert.equal(res.message.tool_calls[0].function.name, 'list_tabs');
+  const sent = JSON.parse(calls.filter((c) => c.url.includes('api.groq.com/openai/v1/chat/completions')).at(-1).body);
+  assert.deepEqual(
+    sent.tools.map((t) => t.function.name),
+    browserNames
+  );
+  assert.match(sent.messages[0].content, /- 42: Gmail/);
+});

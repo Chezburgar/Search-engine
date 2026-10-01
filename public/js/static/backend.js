@@ -21,7 +21,7 @@ import { openverseUrl, mapOpenverse, commonsUrl, mapCommons } from '../shared/im
 import { baseSources, publicSources, chatSearchQuery } from '../shared/sources.js';
 import { stripTags, relevantPassages } from '../shared/text.js';
 import { createGoogle } from '../shared/google.js';
-import { AGENT_TOOLS, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../shared/agent.js';
+import { toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../shared/agent.js';
 import { wikipediaArticle, wikipediaParseUrl, wikipediaToReader, cleanReaderMarkdown } from '../shared/reader.js';
 import { searchYouTube } from '../shared/youtube.js';
 import {
@@ -490,13 +490,14 @@ export function createBackend(cfg = {}) {
       return { query: q, ...out, enabled: true };
     },
 
-    async '/api/agent'({ messages, tabs, final }, { signal }) {
-      const clean = sanitizeAgentMessages(messages);
+    async '/api/agent'({ messages, tabs, final, mode }, { signal }) {
+      mode = mode === 'browser' ? 'browser' : 'spark';
+      const clean = sanitizeAgentMessages(messages, mode);
       if (!clean) throw new ApiError(400, 'Invalid assistant conversation');
       if (!llm.enabled()) throw new ApiError(503, "Spark AI isn't set up on this site (no AI key).");
       const message = await llm.agentStep({
-        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(tabs)) }, ...clean],
-        tools: final ? undefined : AGENT_TOOLS,
+        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(tabs), mode) }, ...clean],
+        tools: final ? undefined : toolsFor(mode),
         signal,
       });
       return { message };

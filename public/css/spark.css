@@ -3410,6 +3410,62 @@ body.has-stabs .assist-fab {
   font-size: 12.5px;
 }
 
+.assist__modes {
+  margin: 10px 16px 0;
+}
+
+.assist__modes[hidden] {
+  display: none;
+}
+
+.assist__note {
+  align-self: center;
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.assist__hint {
+  padding: 10px 12px;
+  border-radius: var(--r-m);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.assist__hint a {
+  color: var(--link);
+  font-weight: 650;
+}
+
+/* In the Chrome extension's side panel: the assistant is the whole page. */
+.assist--embedded {
+  top: 0;
+  width: 100%;
+  border-left: 0;
+  box-shadow: none;
+  animation: none;
+}
+
+body[data-view='assistant'] {
+  overflow: hidden;
+}
+
+.assist-off {
+  margin: 40px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* The extension lets every site show in Spark tabs, so the "page blank?" note isn't needed. */
+.ext-unframe .live__note {
+  display: none;
+}
+
 .assist__log {
   display: flex;
   flex-direction: column;

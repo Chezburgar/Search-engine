@@ -158,7 +158,15 @@ export function agentReply(body) {
   const request = textOf(msgs[lastUserIndex].content).toLowerCase();
   const since = msgs.slice(lastUserIndex + 1);
   const toolResults = since.filter((m) => m.role === 'tool').map((m) => JSON.parse(m.content));
-  const showing = (msgs[0].content.match(/^- (\S+) \(showing\)/m) || [])[1] || 'spark';
+  const chrome = /real Chrome tabs/.test(msgs[0].content);
+  // The tab the user is looking at (in Chrome mode, never the assistant's own tab).
+  const tabSection = msgs[0].content.split(/right now:\n/).at(-1);
+  const listed = [...tabSection.matchAll(/^- (\S+) (.*)$/gm)];
+  const focus =
+    listed.find((m) => /\((showing|active)\)/.test(m[2]) && !/this Spark assistant/.test(m[2])) ||
+    listed.find((m) => !/this Spark assistant/.test(m[2]));
+  const showing = focus ? (chrome ? Number(focus[1]) : focus[1]) : 'spark';
+  const others = (tabs) => tabs.filter((t) => t.id !== 'spark' && !t.self).map((t) => t.id);
   let n = 0;
   const call = (name, args) => ({
     id: `call_${name}_${since.length}_${n++}`,
@@ -170,11 +178,23 @@ export function agentReply(body) {
 
   if (/close all/.test(request)) {
     if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
-    if (toolResults.length === 1) {
-      const ids = toolResults[0].tabs.filter((t) => t.id !== 'spark').map((t) => t.id);
-      return reply({ tool_calls: [call('close_tabs', { tab_ids: ids })] });
-    }
+    if (toolResults.length === 1)
+      return reply({ tool_calls: [call('close_tabs', { tab_ids: others(toolResults[0].tabs) })] });
     return reply({ content: `Closed ${toolResults[1].closed.length} tabs.` });
+  }
+  if (/group/.test(request)) {
+    if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
+    if (toolResults.length === 1) {
+      return reply({
+        tool_calls: [call('group_tabs', { tab_ids: others(toolResults[0].tabs), title: 'Research', color: 'purple' })],
+      });
+    }
+    return reply({ content: `Grouped ${toolResults[1].grouped} tabs as Research.` });
+  }
+  if (/find (.+)/.test(request)) {
+    if (!toolResults.length)
+      return reply({ tool_calls: [call('find_in_tab', { tab_id: showing, text: request.match(/find (.+)/)[1] })] });
+    return reply({ content: toolResults[0].found ? `Found it: ${toolResults[0].context}` : 'Not on this page.' });
   }
   if (/open the top (\d)/.test(request)) {
     const count = Number(request.match(/open the top (\d)/)[1]);
@@ -190,6 +210,7 @@ export function agentReply(body) {
   if (/summari[sz]e/.test(request)) {
     if (!toolResults.length) return reply({ tool_calls: [call('read_tab', { tab_id: showing })] });
     const page = toolResults[0];
+    if (page.error) return reply({ content: `Couldn't read it: ${page.error}` });
     return reply({ content: `**${page.title}**: ${String(page.text || '').slice(0, 80)}` });
   }
   if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });

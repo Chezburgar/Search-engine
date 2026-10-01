@@ -15,7 +15,7 @@ import { suggest } from './providers/suggest.js';
 import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
 import { aiEnabled, aiProvider, aiStatus, complete, streamChat, agentStep } from './ai/llm.js';
-import { AGENT_TOOLS, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../public/js/shared/agent.js';
+import { toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../public/js/shared/agent.js';
 import { sanitizeHistory, validChat, shouldSearch, toModelMessages } from '../public/js/shared/chat.js';
 import { buildSources, publicSources, readPage, readForTab } from './ai/context.js';
 import { forDisplay } from './providers/normalize.js';
@@ -44,7 +44,6 @@ const readLimiter = new RateLimiter({ max: 240, windowMs: 10 * 60 * 1000 });
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), geolocation=(), microphone=(self)',
   'Content-Security-Policy': [
     "default-src 'self'",
@@ -55,7 +54,8 @@ const SECURITY_HEADERS = {
     "connect-src 'self'",
     // Spark tabs can show pages live, in a frame.
     'frame-src https: http:',
-    "frame-ancestors 'none'",
+    // The Chrome extension's side panel shows Spark's assistant in a frame.
+    "frame-ancestors 'self' chrome-extension:",
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; '),
@@ -390,7 +390,8 @@ const routes = {
   // One step of the tab assistant (the loop and the tools run in the browser).
   async 'POST /api/agent'(req, res) {
     const body = await readBody(req, 400 * 1024);
-    const messages = sanitizeAgentMessages(body?.messages);
+    const mode = body?.mode === 'browser' ? 'browser' : 'spark';
+    const messages = sanitizeAgentMessages(body?.messages, mode);
     if (!messages) return json(res, 400, { error: 'Invalid assistant conversation' });
     if (!aiEnabled()) return json(res, 503, { error: 'Spark AI is not set up on this server.' });
     const verdict = aiLimiter.take(clientIp(req));
@@ -401,8 +402,8 @@ const routes = {
     }
     try {
       const message = await agentStep({
-        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(body.tabs)) }, ...messages],
-        tools: body.final ? undefined : AGENT_TOOLS,
+        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(body.tabs), mode) }, ...messages],
+        tools: body.final ? undefined : toolsFor(mode),
       });
       json(res, 200, { message });
     } catch (err) {

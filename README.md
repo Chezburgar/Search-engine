@@ -106,8 +106,9 @@ Browser (vanilla JS, no build step)
 Clicking any web link inside Spark opens it in a Spark tab (tabs last for the browser session).
 
 - **Tabs show the real site** in a frame, one frame per tab, created the first time a tab is shown.
-  Many sites refuse to be shown inside other sites; those show a blank or "refused to connect" frame,
-  and the bar above each page links to opening it in your browser instead. Back/forward follow the
+  Many sites refuse to be shown inside other sites; without the Chrome extension (below) those show
+  a blank or "refused to connect" frame, and the bar above each page links to opening it in your
+  browser instead. Back/forward follow the
   pages opened from the address box or by the assistant (links clicked inside a site stay in its
   frame).
 - **Page text for the assistant** comes from `/api/read`, because a page from another site can't be
@@ -123,6 +124,31 @@ Clicking any web link inside Spark opens it in a Spark tab (tabs last for the br
   and `show_search`. It controls Spark tabs only, not your browser's own
   tabs (a web page can't; that would need a browser extension). Page text is passed to the model as
   data, and the model is told never to follow instructions found in pages.
+
+## Chrome extension (real tabs, and no embed problems)
+
+`extension/` is **Spark Assistant for Chrome** (Manifest V3). With it installed:
+
+- The assistant gets a **Spark tabs / Chrome tabs** switch. In Chrome-tabs mode its tools act on
+  your real tabs through the extension: `list_tabs`, `read_tab`, `open_tab`, `navigate_tab`,
+  `switch_tab`, `close_tabs`, `find_in_tab` (scrolls to and highlights the words), `group_tabs`
+  and `search_web`. It never closes the tab it runs in.
+- Clicking the toolbar icon opens the assistant in Chrome's **side panel** (Spark's
+  `?page=assistant` view in a frame), next to whatever page you're on.
+- **Embedding:** while a Spark tab is open, a session rule removes `X-Frame-Options` and
+  `Content-Security-Policy` from the frames inside that tab only, so any site shows in Spark tabs.
+
+How it connects: the extension registers a tiny content script for your Spark address only (set in
+the side panel; the default is the GitHub Pages site). Spark and that script talk with
+`postMessage`; in the side panel, Spark accepts messages only from a `chrome-extension://` parent.
+The Pages build publishes the folder as `spark-chrome-extension.zip`; see
+[extension/README.md](extension/README.md) to install it.
+
+Why sites don't show in Spark tabs without it: sites send `X-Frame-Options` or a
+`frame-ancestors` CSP to block being framed (protection against clickjacking), and a web page can't
+override another site's headers. The other ways around it are a rewriting proxy server (fragile,
+breaks logins, and it would see everything you browse) or a desktop app (Electron or Tauri) whose
+built-in browser views aren't frames. The extension is the lightest fix.
 
 ## GitHub Pages (static) version
 
@@ -178,6 +204,7 @@ public/
   js/shared/          logic shared by the server and the static build (prompts, Grok client, parsers)
   js/static/          in-browser backend used by the GitHub Pages build
 scripts/              build and deploy the GitHub Pages version
+extension/            Spark Assistant for Chrome (real tabs, side panel, embedding)
 test/                 unit and end-to-end API tests (upstreams mocked)
 ```
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spark Assistant</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <img src="icons/icon-32.png" alt="" width="20" height="20" />
+      <span class="name">Spark Assistant</span>
+      <button class="gear" type="button" aria-expanded="false" aria-controls="settings" title="Settings">
+        <svg
+          viewBox="0 0 24 24"
+          width="18"
+          height="18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
+        </svg>
+      </button>
+    </header>
+    <section id="settings" class="settings" hidden>
+      <label class="row">
+        <input type="checkbox" id="unframe" />
+        <span>
+          <b>Show any site inside Spark tabs</b>
+          <small>Removes sites’ “don’t embed me” headers, only for pages shown inside Spark tabs.</small>
+        </span>
+      </label>
+      <form class="row row--url" id="url-form">
+        <label for="spark-url">Spark address</label>
+        <input id="spark-url" type="url" required spellcheck="false" />
+        <button type="submit">Save</button>
+      </form>
+      <p class="status" id="status" role="status"></p>
+    </section>
+    <iframe id="spark" title="Spark Assistant" allow="clipboard-write"></iframe>
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>

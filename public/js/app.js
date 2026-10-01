@@ -12,6 +12,10 @@ import { renderNews } from './views/news.js';
 import { renderVideos } from './views/videos.js';
 import { tabs } from './tabs/tabs.js';
 import { createAssistant } from './tabs/assistant.js';
+import { connectExtension } from './tabs/extension.js';
+
+// ?page=assistant: just the assistant, full-height (the Chrome extension's side panel).
+const EMBEDDED = new URL(location.href).searchParams.get('page') === 'assistant';
 
 // Spark Grades loads on first visit only.
 const renderGrades = (...args) => import('./views/grades.js').then((m) => m.renderGrades(...args));
@@ -60,6 +64,7 @@ function applyTheme() {
 function parseLocation() {
   const url = new URL(location.href);
   const q = (url.searchParams.get('q') || '').trim();
+  if (EMBEDDED) return { view: 'assistant' };
   if (isGradesPage(url)) return { view: 'grades' };
   if (isResultsPage(url)) {
     const tab = TABS.some((t) => t.id === url.searchParams.get('tab')) ? url.searchParams.get('tab') : 'all';
@@ -205,6 +210,18 @@ function render() {
     return;
   }
 
+  if (loc.view === 'assistant') {
+    shell = null;
+    document.body.dataset.view = 'assistant';
+    setTitle('Spark Assistant');
+    app.replaceChildren(
+      ai.enabled
+        ? ''
+        : h('p', { class: 'assist-off' }, 'Spark AI isn’t set up on this site, so the assistant isn’t available.')
+    );
+    return;
+  }
+
   if (loc.view === 'grades') {
     shell = null;
     document.body.dataset.view = 'grades';
@@ -241,12 +258,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// Pages open in Spark tabs (set up first: it handles Back from a page tab).
-tabs.init({
-  spark: () => ({ title: sparkTitle, url: location.href }),
-  search: (q) => go(q),
-  toggleAssistant: () => assistant?.toggle(),
-});
+// Pages open in Spark tabs (set up first: it handles Back from a page tab). Not in the
+// extension's side panel, where links open real Chrome tabs.
+if (!EMBEDDED) {
+  tabs.init({
+    spark: () => ({ title: sparkTitle, url: location.href }),
+    search: (q) => go(q),
+    toggleAssistant: () => assistant?.toggle(),
+  });
+  // The Chrome extension can let any site show inside Spark tabs.
+  connectExtension().then((info) => document.body.classList.toggle('ext-unframe', Boolean(info?.unframe)));
+}
 window.addEventListener('popstate', render);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
@@ -254,7 +276,7 @@ applyTheme();
 installCitationTips();
 aiStatus().then((status) => {
   ai = status.ai || { enabled: false };
-  if (ai.enabled) assistant = createAssistant({ go: (q, tab) => go(q, tab) });
+  if (ai.enabled) assistant = createAssistant({ go: (q, tab) => go(q, tab), embedded: EMBEDDED });
   features = { videos: Boolean(status.videos) };
   document.documentElement.classList.toggle('ai-off', !ai.enabled);
   render();
