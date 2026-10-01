@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+  <ShortName>Spark</ShortName>
+  <Description>Search the web with Spark</Description>
+  <InputEncoding>UTF-8</InputEncoding>
+  <Image width="32" height="32" type="image/png">https://chezburgar.github.io/Search-engine/assets/favicon-32.png</Image>
+  <Url type="text/html" method="get" template="https://chezburgar.github.io/Search-engine/?q={searchTerms}"/>
+</OpenSearchDescription>

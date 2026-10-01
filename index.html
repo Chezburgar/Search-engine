@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Spark</title>
+    <meta
+      name="description"
+      content="Spark — search the web with a spark of intelligence. Fast results, AI overviews and answers powered by Grok."
+    />
+    <meta name="theme-color" content="#FBFBFC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0E0C12" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <meta property="og:title" content="Spark Search" />
+    <meta property="og:description" content="Search the web with a spark of intelligence." />
+    <meta property="og:image" content="assets/spark-logo.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="search" type="application/opensearchdescription+xml" title="Spark" href="opensearch.xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap"
+    />
+    <link rel="stylesheet" href="css/spark.css" />
+    <link rel="preload" href="assets/spark-mark.png" as="image" />
+    <script src="spark-config.js"></script>
+    <script src="js/theme-init.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="spark-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#F9A618" />
+          <stop offset="0.38" stop-color="#F26A1A" />
+          <stop offset="0.68" stop-color="#EC3F47" />
+          <stop offset="1" stop-color="#C01264" />
+        </linearGradient>
+      </defs>
+    </svg>
+    <div class="progress" id="progress" aria-hidden="true"></div>
+    <div id="app">
+      <div class="boot" aria-hidden="true"><img src="assets/spark-mark.png" alt="" width="72" height="62" /></div>
+    </div>
+    <noscript>
+      <p class="noscript">Spark needs JavaScript to search. Please enable it and reload.</p>
+    </noscript>
+  </body>
+</html>
