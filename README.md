@@ -10,6 +10,7 @@
 ## Features
 
 **Search**
+
 - Web results from [Keenable](https://keenable.ai) with favicons, breadcrumbs, query-focused snippets and "More results" pagination
 - Autocomplete with recent searches, keyboard navigation and voice search
 - Knowledge panels from Wikipedia
@@ -20,6 +21,7 @@
 - **Videos** tab with YouTube results that play inside Spark
 
 **Spark Grades (MCPS)**
+
 - A **Grades** link on the home page opens StudentVUE grades for Montgomery County Public Schools, in Spark's style (a vanilla-JS take on GradeFlow)
 - Sign in with an MCPS student ID and StudentVUE password, or explore the demo
 - Overview with unweighted and weighted GPA (Honors/AP/IB +1 for A–C), average, grade spread, every class, upcoming work and recent grades, per marking period
@@ -27,7 +29,8 @@
 - Schedule and attendance
 
 **Spark AI (Groq or xAI Grok)**
-- **Spark Overview**: a streamed answer at the top of results, grounded in the top web results *and the text of the top pages*, with numbered citation chips you can hover and click
+
+- **Spark Overview**: a streamed answer at the top of results, grounded in the top web results _and the text of the top pages_, with numbered citation chips you can hover and click
 - **Ask a follow-up** from the overview to continue the conversation in the Spark AI tab
 - **Spark AI tab**: conversational search. Each question runs a fresh web search, shows source cards, and streams a cited answer, followed by suggested follow-ups
 - **Image questions**: attach, paste or drop up to 4 images in the chat, or use the image button in the search box. Images are resized in the browser and sent to a vision model
@@ -37,6 +40,7 @@
 - An "Ask Spark" row in autocomplete and a ✦ button in the search box jump straight to an AI answer
 
 **Polish**
+
 - Light and dark themes in the logo's amber → orange → magenta palette
 - Responsive from phones to wide screens
 - Respects reduced-motion settings
@@ -52,20 +56,21 @@ cp .env.example .env      # then put your xAI key in XAI_API_KEY
 npm start                 # http://localhost:3000
 ```
 
-| Variable | Purpose |
-| --- | --- |
-| `GROQ_API_KEY` | **AI features**, option 1: a [Groq](https://console.groq.com) key (`gsk_…`). Fast, with a free tier. Used if set. |
-| `XAI_API_KEY` | **AI features**, option 2: an [xAI](https://console.x.ai) Grok key (`xai-…`). A key in the wrong variable still works; the prefix decides. |
-| `AI_MODEL` / `AI_CHAT_MODEL` / `AI_VISION_MODEL` | Optional. Pin models. Otherwise Spark lists the models your key can use and picks fast ones (Groq: GPT-OSS for text, Qwen 3.6 for images). |
-| `KEENABLE_API_KEY` | Recommended. [Keenable](https://keenable.ai) web search key. Without one, Spark uses Keenable's keyless endpoint (rate limited per IP), then DuckDuckGo, Bing and Wikipedia. |
-| `GOOGLE_API_KEY` | Optional. A Google API key (`AIza…`). Allow the **Generative Language API** on it for Google search (Gemini grounding), and the **YouTube Data API v3** for the Videos tab. |
-| `GOOGLE_CSE_ID` | Optional. A Programmable Search Engine ID; enables the Custom Search JSON API (closed to new customers, ends 2027-01-01). |
-| `GOOGLE_MODEL` | Optional. Pin the Gemini model used for Google search. |
-| `BRAVE_API_KEY` | Optional. [Brave Search API](https://brave.com/search/api/) key; when set it is tried before Keenable and also powers news and images. |
-| `PORT` / `HOST` | Where to listen (default `3000` / `0.0.0.0`). |
-| `SPARK_REGION` | Result region and language, e.g. `us-en`, `uk-en`, `de-de`. |
-| `AI_RATE_LIMIT` | Max AI requests per visitor IP per 10 minutes (default 120). |
-| `TRUST_PROXY` | Set to `1` behind a reverse proxy so rate limits use `X-Forwarded-For`. |
+| Variable                                         | Purpose                                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GROQ_API_KEY`                                   | **AI features**, option 1: a [Groq](https://console.groq.com) key (`gsk_…`). Fast, with a free tier. Used if set.                                                                                                                                              |
+| `XAI_API_KEY`                                    | **AI features**, option 2: an [xAI](https://console.x.ai) Grok key (`xai-…`). A key in the wrong variable still works; the prefix decides.                                                                                                                     |
+| `AI_MODEL` / `AI_CHAT_MODEL` / `AI_VISION_MODEL` | Optional. Pin models. Otherwise Spark lists the models your key can use and picks fast ones (Groq: GPT-OSS for text, Qwen 3.6 for images).                                                                                                                     |
+| `KEENABLE_API_KEY`                               | Recommended. [Keenable](https://keenable.ai) web search key. Without one, Spark uses Keenable's keyless endpoint (rate limited per IP), then DuckDuckGo, Bing and Wikipedia.                                                                                   |
+| `GOOGLE_API_KEY`                                 | Optional. A Google API key (`AIza…`) with the **YouTube Data API v3** allowed, for the Videos tab. It's also used for Gemini when `GEMINI_API_KEY` is unset.                                                                                                   |
+| `GEMINI_API_KEY`                                 | Optional. A [Gemini API](https://aistudio.google.com/apikey) key for Google AI search (Grounding with Google Search, which needs billing on the key's project) and page summaries. On Pages without grounding, Gemini reads DuckDuckGo's results page instead. |
+| `GOOGLE_CSE_ID`                                  | Optional. A Programmable Search Engine ID; enables the Custom Search JSON API (closed to new customers, ends 2027-01-01).                                                                                                                                      |
+| `GOOGLE_MODEL`                                   | Optional. Pin the Gemini model used for Google search.                                                                                                                                                                                                         |
+| `BRAVE_API_KEY`                                  | Optional. [Brave Search API](https://brave.com/search/api/) key; when set it is tried before Keenable and also powers news and images.                                                                                                                         |
+| `PORT` / `HOST`                                  | Where to listen (default `3000` / `0.0.0.0`).                                                                                                                                                                                                                  |
+| `SPARK_REGION`                                   | Result region and language, e.g. `us-en`, `uk-en`, `de-de`.                                                                                                                                                                                                    |
+| `AI_RATE_LIMIT`                                  | Max AI requests per visitor IP per 10 minutes (default 120).                                                                                                                                                                                                   |
+| `TRUST_PROXY`                                    | Set to `1` behind a reverse proxy so rate limits use `X-Forwarded-For`.                                                                                                                                                                                        |
 
 > **Keep your key secret.** `.env` is git-ignored. The key is only used on the server and is never sent to the browser.
 
@@ -98,11 +103,11 @@ Keenable, Google, Groq/Grok, Wikipedia, Open-Meteo and Openverse directly from t
 The live site is https://chezburgar.github.io/Search-engine/.
 
 **Publishing (GitHub Actions).** `.github/workflows/pages.yml` runs the tests, builds the
-site and deploys it on every push (or from Actions → *Deploy to GitHub Pages* → *Run
-workflow*). Keys come from repository secrets, so they never enter git history. One-time setup:
+site and deploys it on every push (or from Actions → _Deploy to GitHub Pages_ → _Run
+workflow_). Keys come from repository secrets, so they never enter git history. One-time setup:
 
 1. **Settings → Secrets and variables → Actions → New repository secret**: add
-   `GROQ_API_KEY` (or `XAI_API_KEY`), `KEENABLE_API_KEY` and `GOOGLE_API_KEY`.
+   `GROQ_API_KEY` (or `XAI_API_KEY`), `KEENABLE_API_KEY`, `GOOGLE_API_KEY` and `GEMINI_API_KEY`.
 2. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
 
 > **The keys are public on Pages.** The build writes them into `spark-config.js`, which
@@ -116,9 +121,10 @@ To build locally: `npm run build:pages` writes `dist/` (serve it with any static
 GitHub's push protection rejects builds that contain the xAI key, by design.
 
 Every API is called from the visitor's browser, so it must accept cross-origin (CORS)
-requests. Groq and Google do. If Keenable refuses, Spark switches to Google (Gemini grounding)
-and then Groq's built-in web search (Compound) for results, news and page summaries; Wikipedia
-is the last resort. **Why these results?** under the result count lists each source that was
+requests. Groq and Google do. If Keenable refuses, Spark switches to Google AI search (Gemini
+grounding, paid tier only), then has Gemini read DuckDuckGo's results page (free tier; titles and
+links copied from the page, answers dropped unless Gemini actually loaded it), then Groq's
+built-in web search, for results, news and page summaries; Wikipedia is the last resort. **Why these results?** under the result count lists each source that was
 skipped and why (for example, a key whose API restrictions block the Gemini API).
 Compared with the server, the static build has no DuckDuckGo/Bing fallback, takes
 suggestions from Wikipedia, and has no per-visitor rate limiting.

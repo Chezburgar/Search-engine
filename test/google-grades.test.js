@@ -4,7 +4,7 @@ const { mockFetch, calls, SVUE_XML } = await import('./fixtures/mock-fetch.js');
 const { default: test } = await import('node:test');
 const { default: assert } = await import('node:assert/strict');
 const { createBackend } = await import('../public/js/static/backend.js');
-const { parseGrounded, rankGeminiModels, createGoogle } = await import('../public/js/shared/google.js');
+const { parseGrounded, rankGeminiModels, createGoogle, resolveLink } = await import('../public/js/shared/google.js');
 const { isoDuration } = await import('../public/js/shared/youtube.js');
 const { linksFrom } = await import('../public/js/shared/llm.js');
 const { parseXml, find, attr } = await import('../public/js/grades/xml.js');
@@ -102,10 +102,78 @@ test('a Google key that is not allowed to use Gemini is explained, then skipped'
   assert.equal(first.provider, 'Wikipedia');
   const note = first.notes.find((n) => n.startsWith('Google AI search'));
   assert.match(note, /API restrictions don't allow the Gemini API/);
+  // The same key also drives the DuckDuckGo reader, so that isn't tried either.
+  assert.ok(first.notes.includes('DuckDuckGo (read by Gemini): skipped (same Gemini key)'), first.notes.join('\n'));
   const before = calls.filter((c) => c.url.includes('generativelanguage')).length;
   const second = await backend.json('/api/search', { q: 'python language' });
   assert.ok(second.notes.some((n) => /Google AI search: .*skipped until reload/.test(n)));
   assert.equal(calls.filter((c) => c.url.includes('generativelanguage')).length, before);
+});
+
+test('without search grounding (free tier), Gemini reads DuckDuckGo results instead', async () => {
+  const start = calls.length;
+  const backend = createBackend({
+    mode: 'static',
+    keenableKey: 'keen_test',
+    googleKey: 'AIza_youtube',
+    geminiKey: 'AQ_noground',
+  });
+  const data = await backend.json('/api/search', { q: 'black holes' });
+  assert.equal(data.provider, 'DuckDuckGo (read by Gemini)');
+  assert.match(
+    data.notes.find((n) => n.startsWith('Google AI search')),
+    /not included in the Gemini free tier/
+  );
+  // Redirects resolved, bare domains given a scheme, the ad dropped.
+  assert.equal(data.results.length, 6);
+  assert.deepEqual(
+    data.results.slice(0, 2).map((r) => [r.url, r.host]),
+    [
+      ['https://science.nasa.gov/universe/black-holes/', 'science.nasa.gov'],
+      ['https://en.wikipedia.org/wiki/Black_hole', 'en.wikipedia.org'],
+    ]
+  );
+  assert.ok(data.results.every((r) => !/duckduckgo/.test(r.url) && r.snippet));
+  const gemini = calls.slice(start).filter((c) => c.url.includes('generativelanguage'));
+  assert.ok(
+    gemini.every((c) => c.headers['x-goog-api-key'] === 'AQ_noground'),
+    'Gemini uses its own key'
+  );
+  const reader = gemini.filter((c) => c.body && /lite\.duckduckgo\.com/.test(c.body)).at(-1);
+  assert.match(
+    JSON.parse(reader.body).contents[0].parts[0].text,
+    /lite\.duckduckgo\.com\/lite\/\?q=black\+holes&kl=us-en/
+  );
+
+  // Grounding is not retried; the reader still is.
+  const before = calls.filter((c) => /google_search/.test(c.body || '')).length;
+  const again = await backend.json('/api/search', { q: 'rust language' });
+  assert.equal(again.provider, 'DuckDuckGo (read by Gemini)');
+  assert.equal(calls.filter((c) => /google_search/.test(c.body || '')).length, before);
+
+  const news = await backend.json('/api/news', { q: 'nasa' });
+  assert.equal(news.provider, 'DuckDuckGo (read by Gemini)');
+  assert.match(calls.filter((c) => /lite\.duckduckgo/.test(c.body || '')).at(-1).body, /nasa\+news&kl=us-en&df=w/);
+
+  // YouTube keeps using the Google key.
+  await backend.json('/api/videos', { q: 'cats' });
+  assert.match(calls.filter((c) => c.url.includes('/youtube/v3/search')).at(-1).url, /key=AIza_youtube/);
+});
+
+test('Gemini answers are dropped when it could not load the page', async () => {
+  const google = createGoogle({ geminiKey: 'AQ_noground' });
+  await assert.rejects(google.readSearch('readerfail'), /couldn’t open the results page/);
+  await assert.rejects(google.summarizeUrl('https://unreachable.example/', 'x'), /couldn’t open the page/);
+  assert.match(await google.summarizeUrl('https://www.rust-lang.org/', 'rust'), /TL;DR/);
+
+  assert.equal(
+    resolveLink('//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1&rut=x'),
+    'https://example.com/a?b=1'
+  );
+  assert.equal(resolveLink('www.example.com/page'), 'https://www.example.com/page');
+  assert.equal(resolveLink('https://duckduckgo.com/y.js?ad_domain=x'), '');
+  assert.equal(resolveLink('javascript:alert(1)'), '');
+  assert.equal(resolveLink('A sentence, not a link.'), '');
 });
 
 test('Custom Search is used first when a search engine ID is configured', async () => {

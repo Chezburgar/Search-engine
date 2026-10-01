@@ -25,6 +25,7 @@ const siteConfig = {
   aiKey: withKeys ? config.ai.apiKey : '',
   keenableKey: withKeys ? config.keenable.apiKey : '',
   googleKey: withKeys ? config.google.apiKey : '',
+  geminiKey: withKeys ? config.google.geminiKey : '',
   googleCx: config.google.cx,
   googleModel: config.google.model,
 };
@@ -53,3 +54,6 @@ console.log(`Built static site in dist/ for ${siteUrl}`);
 console.log(`  AI:       ${siteConfig.aiKey ? `${config.ai.provider} (key included — public)` : 'off (no AI key)'}`);
 console.log(`  Keenable: ${siteConfig.keenableKey ? 'API key included (public)' : 'keyless public endpoint'}`);
 console.log(`  Google:   ${siteConfig.googleKey ? 'API key included (public)' : 'off (no Google key)'}`);
+console.log(
+  `  Gemini:   ${siteConfig.geminiKey ? 'API key included (public)' : siteConfig.googleKey ? 'uses the Google key' : 'off (no key)'}`
+);

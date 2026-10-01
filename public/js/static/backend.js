@@ -75,7 +75,13 @@ export function createBackend(cfg = {}) {
     visionModel: cfg.aiVisionModel || '',
     keyHint: "this site's AI key",
   });
-  const google = createGoogle({ apiKey: cfg.googleKey || '', cx: cfg.googleCx || '', model: cfg.googleModel || '' });
+  const google = createGoogle({
+    apiKey: cfg.googleKey || '',
+    geminiKey: cfg.geminiKey || '',
+    cx: cfg.googleCx || '',
+    model: cfg.googleModel || '',
+    region: cfg.region || 'us-en',
+  });
   const cache = {
     web: new Cache({ max: 100, ttl: 10 * 60 * 1000 }),
     misc: new Cache({ max: 300, ttl: 30 * 60 * 1000 }),
@@ -101,16 +107,21 @@ export function createBackend(cfg = {}) {
   };
 
   // A Google call that can't work until the key's settings change turns that source off,
-  // with the reason kept for the diagnostics note.
+  // with the reason kept for the diagnostics note. A refused Gemini key turns off every Gemini
+  // source; a missing search-grounding quota only turns off grounding.
   const googleOff = {};
   const guardGoogle = async (which, run) => {
     try {
       return await run();
     } catch (err) {
-      if (err?.permanent) googleOff[which] = `${err.message} (skipped until reload)`;
+      if (err?.permanent) {
+        const scope = which === 'cse' || err.status === 429 ? which : 'gemini';
+        googleOff[scope] = `${err.message} (skipped until reload)`;
+      }
       throw err;
     }
   };
+  const groundingOff = () => googleOff.gemini || googleOff.grounding || null;
 
   const webProviders = [
     {
@@ -138,12 +149,23 @@ export function createBackend(cfg = {}) {
     {
       // Gemini searching Google ("Grounding with Google Search").
       name: 'Google AI search',
-      enabled: () => google.enabled() && !googleOff.gemini,
-      skipReason: () => googleOff.gemini || null,
+      enabled: () => google.enabled() && !groundingOff(),
+      skipReason: groundingOff,
       async search(q, page) {
         if (page > 1) return { results: [], next: null };
-        const out = await guardGoogle('gemini', () => google.groundedSearch(q));
+        const out = await guardGoogle('grounding', () => google.groundedSearch(q));
         return { results: out.results, next: null, googleSuggestions: out.suggestionsHtml || null };
+      },
+    },
+    {
+      // Without search grounding: Gemini reads DuckDuckGo's results page (works on the free tier).
+      name: 'DuckDuckGo (read by Gemini)',
+      enabled: () => google.enabled() && !googleOff.gemini,
+      skipReason: () => (googleOff.gemini ? 'skipped (same Gemini key)' : null),
+      async search(q, page) {
+        if (page > 1) return { results: [], next: null };
+        const out = await guardGoogle('reader', () => google.readSearch(q));
+        return { results: out.results, next: null };
       },
     },
     {
@@ -212,7 +234,10 @@ export function createBackend(cfg = {}) {
     const skipped = webProviders
       .filter((p) => !active.includes(p) && p.skipReason?.())
       .map((p) => `${p.name}: ${p.skipReason()}`);
-    const out = await firstSuccessful(active, (p) => p.search(q, 1));
+    // A source can be switched off by an earlier one in this same search (shared Gemini key).
+    const out = await firstSuccessful(active, (p) =>
+      p.enabled && !p.enabled() ? Promise.reject(new Error(p.skipReason?.() || 'skipped')) : p.search(q, 1)
+    );
     return { ...out, errors: [...skipped, ...out.errors], results: dedupe(out.results) };
   }
 
@@ -264,11 +289,24 @@ export function createBackend(cfg = {}) {
         if (results.length) return { results, provider: 'Keenable' };
       } catch {}
     }
-    if (google.enabled() && !googleOff.gemini) {
+    const gemini = [
+      [
+        'Google AI search',
+        () => !groundingOff(),
+        () => guardGoogle('grounding', () => google.groundedSearch(q, { news: true })),
+      ],
+      [
+        'DuckDuckGo (read by Gemini)',
+        () => !googleOff.gemini,
+        () => guardGoogle('reader', () => google.readSearch(q, { news: true })),
+      ],
+    ];
+    for (const [provider, on, run] of gemini) {
+      if (!google.enabled() || !on()) continue;
       try {
-        const out = await guardGoogle('gemini', () => google.groundedSearch(q, { news: true }));
+        const out = await run();
         const results = out.results.map((r) => ({ ...toItem(r), source: r.host, host: r.host }));
-        if (results.length) return { results, provider: 'Google AI search' };
+        if (results.length) return { results, provider };
       } catch {}
     }
     if (llm.enabled() && llm.provider.searchModel) {

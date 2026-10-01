@@ -383,9 +383,42 @@ async function mockFetch(input, init = {}) {
     const body = JSON.parse(init.body || '{}');
     const prompt = body.contents?.[0]?.parts?.[0]?.text || '';
     if (body.tools?.[0]?.url_context) {
-      return json({
-        candidates: [{ content: { parts: [{ text: '**TL;DR:** Gemini read the page.\n- Point one' }] } }],
-      });
+      const target = (prompt.match(/https?:\/\/\S+/) || [''])[0];
+      const loaded = !/readerfail|unreachable/.test(target);
+      const urlContextMetadata = {
+        urlMetadata: [
+          {
+            retrievedUrl: target,
+            urlRetrievalStatus: loaded ? 'URL_RETRIEVAL_STATUS_SUCCESS' : 'URL_RETRIEVAL_STATUS_ERROR',
+          },
+        ],
+      };
+      // A results page: links as on DuckDuckGo's lite page (redirects, a bare domain, an ad).
+      // When the page didn't load, Gemini answers from memory anyway.
+      const text = /search results page/.test(prompt)
+        ? [
+            'Sponsored deal ::: https://duckduckgo.com/y.js?ad_domain=ads.example&u3=x ::: An ad.',
+            ...SITES.slice(0, 6).map(([title, link], i) =>
+              i === 1
+                ? `${title} ::: ${link.replace(/^https:\/\//, '')} ::: Gemini's summary of ${title}.`
+                : `${title} ::: //duckduckgo.com/l/?uddg=${encodeURIComponent(link)}&rut=abc${i} ::: Gemini's summary of ${title}.`
+            ),
+          ].join('\n')
+        : '**TL;DR:** Gemini read the page.\n- Point one';
+      return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP', urlContextMetadata }] });
+    }
+    // Free-tier keys have no Google Search grounding quota.
+    if (key === 'AQ_noground') {
+      return json(
+        {
+          error: {
+            code: 429,
+            message: 'You exceeded your current quota, please check your plan and billing details.',
+            status: 'RESOURCE_EXHAUSTED',
+          },
+        },
+        429
+      );
     }
     return json(geminiGrounded(prompt));
   }

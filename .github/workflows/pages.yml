@@ -4,7 +4,8 @@
 #   GROQ_API_KEY      Groq key (gsk_…) — enables AI overviews, chat, image questions and summaries
 #   XAI_API_KEY       or an xAI Grok key (xai-…) instead; Groq is used when both are set
 #   KEENABLE_API_KEY  Keenable web search key (optional; keyless endpoint otherwise)
-#   GOOGLE_API_KEY    Google API key (AIza…) for Google AI search (Gemini API) and YouTube videos
+#   GOOGLE_API_KEY    Google API key (AIza…) for YouTube videos (and Gemini, if GEMINI_API_KEY is unset)
+#   GEMINI_API_KEY    Gemini API key for Google AI search, web results and page summaries
 #   GOOGLE_CSE_ID     Programmable Search Engine ID, only if the key's project has Custom Search access
 # They are inserted into the built site only, never committed. Note that every visitor
 # can read them from spark-config.js.
@@ -53,6 +54,7 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           KEENABLE_API_KEY: ${{ secrets.KEENABLE_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_CSE_ID: ${{ secrets.GOOGLE_CSE_ID }}
           PAGES_URL: ${{ steps.pages.outputs.base_url }}
 

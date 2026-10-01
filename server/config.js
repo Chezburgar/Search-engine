@@ -65,6 +65,9 @@ export const config = {
   braveKey: (process.env.BRAVE_API_KEY || '').trim(),
   google: {
     apiKey: (process.env.GOOGLE_API_KEY || '').trim(),
+    // A separate key for the Gemini API; GOOGLE_API_KEY is used when this is empty.
+    geminiKey: (process.env.GEMINI_API_KEY || '').trim(),
+    region: process.env.SPARK_REGION || 'us-en',
     cx: (process.env.GOOGLE_CSE_ID || '').trim(),
     model: (process.env.GOOGLE_MODEL || '').trim(),
   },

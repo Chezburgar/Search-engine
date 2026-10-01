@@ -1,9 +1,13 @@
-// Google search for Spark, with a Google API key (AIza…):
-//  1. Programmable Search / Custom Search JSON API, when a search engine ID (cx) is set.
-//     Closed to new customers and shutting down on 2027-01-01, so it's optional.
-//  2. Gemini with "Grounding with Google Search": Gemini searches Google and lists the
-//     pages it found. Works with an AI Studio key and from the browser (CORS).
-// Shared by the server and the static (GitHub Pages) build.
+// Google search for Spark:
+//  1. Programmable Search / Custom Search JSON API, with a Google API key (AIza…) and a search
+//     engine ID (cx). Closed to new customers and shutting down on 2027-01-01, so it's optional.
+//  2. Gemini with "Grounding with Google Search": Gemini searches Google and lists the pages it
+//     found. Needs a Gemini API key on a paid (billing-enabled) project; the free tier has no
+//     search grounding quota for Gemini 3.
+//  3. A web reader: Gemini's URL context tool reads a DuckDuckGo results page and lists the
+//     results. Works on the free tier, so it backs up search when grounding is unavailable.
+// Gemini calls use their own key (geminiKey) when given, else apiKey. All of it works from the
+// browser (CORS). Shared by the server and the static (GitHub Pages) build.
 
 import { hostOf, normalizeResult } from './results.js';
 import { relevantPassages } from './text.js';
@@ -48,6 +52,29 @@ const clean = (s) =>
     .replace(/^\[(.*)\]$/, '$1')
     .trim();
 
+// A result link as Gemini copied it: DuckDuckGo redirects ("//duckduckgo.com/l/?uddg=…") become
+// their destination, bare "www.site.com/page" gets a scheme, and ads or junk become ''.
+export function resolveLink(link) {
+  let s = String(link || '')
+    .trim()
+    .replace(/^<|>$/g, '');
+  if (s.startsWith('//')) s = `https:${s}`;
+  else if (!/^[a-z][\w+.-]*:/i.test(s) && /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s)) s = `https://${s}`;
+  try {
+    const url = new URL(s);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    if (/(^|\.)duckduckgo\.com$/i.test(url.hostname)) {
+      const target = url.searchParams.get('uddg') || '';
+      return /^https?:\/\//i.test(target) && !/(^|\.)duckduckgo\.com\//i.test(target) ? target : '';
+    }
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+const looksLikeLink = (s) => /^(https?:)?\/\/\S+$|^[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(s || '');
+
 const isRedirect = (u) => /vertexaisearch\.cloud\.google\.com|grounding-api-redirect/i.test(u);
 const looksLikeDomain = (s) => /^[\w-]+(\.[\w-]+)+$/.test(s || '');
 
@@ -70,12 +97,12 @@ export function parseGrounded(data) {
       const parts = line.split(':::').map(clean);
       if (parts.length < 2) return null;
       const [title, second, ...rest] = parts;
-      const urlLike = /^https?:\/\//i.test(second);
+      const urlLike = looksLikeLink(second);
       return {
         index,
         line,
         title,
-        url: urlLike ? second : '',
+        url: urlLike ? resolveLink(second) : '',
         summary: urlLike ? rest.join(' ') : [second, ...rest].join(' '),
       };
     })
@@ -128,12 +155,36 @@ export function mapCse(data) {
   );
 }
 
-export function createGoogle({ apiKey = '', cx = '', model = '' } = {}) {
+// Whether Gemini's URL context tool actually loaded the page (else it answers from memory).
+export function urlRetrieved(data, url) {
+  const meta = data?.candidates?.[0]?.urlContextMetadata?.urlMetadata || [];
+  const want = String(url).replace(/[/?#]+$/, '');
+  return meta.some(
+    (m) =>
+      /SUCCESS/.test(m.urlRetrievalStatus || '') &&
+      String(m.retrievedUrl || '')
+        .replace(/[/?#]+$/, '')
+        .startsWith(want.split('?')[0]) &&
+      (!want.includes('?') || String(m.retrievedUrl || '').includes(want.split('?')[1].slice(0, 30)))
+  );
+}
+
+const answerText = (data) =>
+  (data?.candidates?.[0]?.content?.parts || [])
+    .map((p) => p.text || '')
+    .join('')
+    .trim();
+
+export const readerUrl = (q, { region = 'us-en', news = false } = {}) =>
+  `https://lite.duckduckgo.com/lite/?${new URLSearchParams({ q: news ? `${q} news` : q, kl: region, ...(news ? { df: 'w' } : {}) })}`;
+
+export function createGoogle({ apiKey = '', geminiKey = '', cx = '', model = '', region = 'us-en' } = {}) {
   const http = (...args) => globalThis.fetch(...args);
+  const aiKey = geminiKey || apiKey;
   let modelsPromise = null;
   let working = model || null;
 
-  const enabled = () => Boolean(apiKey);
+  const enabled = () => Boolean(aiKey);
   const hasCse = () => Boolean(apiKey && cx);
 
   async function readError(res, label) {
@@ -172,7 +223,7 @@ export function createGoogle({ apiKey = '', cx = '', model = '' } = {}) {
   function candidates() {
     if (working) return Promise.resolve([working]);
     modelsPromise ||= http(`${GEMINI}/models?pageSize=200`, {
-      headers: { 'x-goog-api-key': apiKey },
+      headers: { 'x-goog-api-key': aiKey },
       signal: AbortSignal.timeout(6000),
     })
       .then((res) => (res.ok ? res.json() : { models: [] }))
@@ -182,14 +233,14 @@ export function createGoogle({ apiKey = '', cx = '', model = '' } = {}) {
     return modelsPromise;
   }
 
-  async function generate(body, { signal, timeout = 30000 } = {}) {
+  async function generate(body, { signal, timeout = 30000, grounding = false } = {}) {
     let lastError = null;
     for (const m of await candidates()) {
       let res;
       try {
         res = await http(`${GEMINI}/models/${m}:generateContent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': aiKey },
           body: JSON.stringify(body),
           signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
         });
@@ -202,8 +253,17 @@ export function createGoogle({ apiKey = '', cx = '', model = '' } = {}) {
         return res.json();
       }
       lastError = await readError(res, 'Gemini API');
-      // Try the next model only when this one is unavailable or out of quota.
-      if (lastError.permanent || ![400, 404, 429].includes(res.status)) throw lastError;
+      // Search grounding has one quota for all Gemini 3 models, and none on the free tier.
+      if (grounding && res.status === 429) {
+        const err = new GoogleError(
+          429,
+          'Google Search grounding quota is used up, or not included in the Gemini free tier (turn on billing for the Gemini key’s project)'
+        );
+        err.permanent = true;
+        throw err;
+      }
+      // Try the next model only when this one is unavailable, busy or out of quota.
+      if (lastError.permanent || ![400, 404, 429, 503].includes(res.status)) throw lastError;
     }
     throw lastError || new GoogleError(502, 'no Gemini model available');
   }
@@ -222,10 +282,46 @@ No numbering, no markdown, no other text.`;
         tools: [{ google_search: {} }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 1600 },
       },
-      { signal }
+      { signal, grounding: true }
     );
     const out = parseGrounded(data);
     out.results = out.results.map((r) => ({ ...r, extract: r.extract || relevantPassages(r.snippet, q, 600) }));
+    return out;
+  }
+
+  // Web results without search grounding: Gemini reads DuckDuckGo's results page. Titles and
+  // links are copied from the page; summaries are Gemini's own words (verbatim snippets trip
+  // its recitation filter). Answers are dropped unless the page was actually loaded.
+  async function readSearch(q, { news = false, signal } = {}) {
+    const page = readerUrl(q, { region, news });
+    const data = await generate(
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `Read this search results page: ${page}
+List its organic results in order (skip ads and sponsored links), up to 10, one per line:
+TITLE ::: URL ::: SUMMARY
+TITLE and URL exactly as on the page (the full link address). SUMMARY: one short sentence, in your own words, on what the page covers. No other text.`,
+              },
+            ],
+          },
+        ],
+        tools: [{ url_context: {} }],
+        generationConfig: { temperature: 0, maxOutputTokens: 2000 },
+      },
+      { signal, timeout: 25000 }
+    );
+    if (!urlRetrieved(data, page)) throw new GoogleError(502, 'Gemini couldn’t open the results page');
+    if (data?.candidates?.[0]?.finishReason === 'RECITATION')
+      throw new GoogleError(502, 'Gemini declined to copy the results');
+    const out = parseGrounded(data);
+    out.results = out.results
+      .filter((r) => !/(^|\.)duckduckgo\.com$/.test(r.host))
+      .map((r) => ({ ...r, extract: r.extract || relevantPassages(r.snippet, q, 600) }));
+    out.suggestionsHtml = '';
     return out;
   }
 
@@ -249,11 +345,10 @@ Format: "**TL;DR:** one sentence", then 3–5 bullet points with the most useful
       },
       { signal, timeout: 40000 }
     );
-    return (data?.candidates?.[0]?.content?.parts || [])
-      .map((p) => p.text || '')
-      .join('')
-      .trim();
+    // Without the page, Gemini would summarize from memory.
+    if (!urlRetrieved(data, url)) throw new GoogleError(502, 'Gemini couldn’t open the page');
+    return answerText(data);
   }
 
-  return { enabled, hasCse, cse, groundedSearch, summarizeUrl };
+  return { enabled, hasCse, cse, groundedSearch, readSearch, summarizeUrl };
 }

@@ -7,6 +7,7 @@ process.env.AI_PROVIDER = '';
 process.env.XAI_MODEL = '';
 process.env.KEENABLE_API_KEY = 'keen_test';
 process.env.GOOGLE_API_KEY = '';
+process.env.GEMINI_API_KEY = '';
 process.env.GOOGLE_CSE_ID = '';
 process.env.GOOGLE_MODEL = '';
 process.env.MOCK_DELAY = '0';
