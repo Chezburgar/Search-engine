@@ -21,6 +21,8 @@ import { openverseUrl, mapOpenverse, commonsUrl, mapCommons } from '../shared/im
 import { wantsOverview } from '../shared/intent.js';
 import { baseSources, publicSources, newsSources, chatSearchQuery } from '../shared/sources.js';
 import { stripTags, relevantPassages } from '../shared/text.js';
+import { createGoogle } from '../shared/google.js';
+import { searchYouTube } from '../shared/youtube.js';
 import {
   overviewMessages,
   relatedMessages,
@@ -43,7 +45,16 @@ const withTimeout = (signal, ms) =>
 
 async function getJSON(url, { init = {}, timeout = 8000, signal } = {}) {
   const res = await fetch(url, { ...init, signal: withTimeout(signal, timeout) });
-  if (!res.ok) throw new ApiError(res.status, `${new URL(url).host} responded ${res.status}`);
+  if (!res.ok) {
+    // Keep the API's own explanation (e.g. "API key not valid") for the diagnostics note.
+    let detail = '';
+    try {
+      const data = await res.json();
+      detail = data.error?.message || data.error || data.message || '';
+      if (typeof detail !== 'string') detail = JSON.stringify(detail);
+    } catch {}
+    throw new ApiError(res.status, `HTTP ${res.status}${detail ? ` — ${detail.slice(0, 160)}` : ''}`);
+  }
   return res.json();
 }
 
@@ -64,6 +75,7 @@ export function createBackend(cfg = {}) {
     visionModel: cfg.aiVisionModel || '',
     keyHint: "this site's AI key",
   });
+  const google = createGoogle({ apiKey: cfg.googleKey || '', cx: cfg.googleCx || '', model: cfg.googleModel || '' });
   const cache = {
     web: new Cache({ max: 100, ttl: 10 * 60 * 1000 }),
     misc: new Cache({ max: 300, ttl: 30 * 60 * 1000 }),
@@ -88,10 +100,23 @@ export function createBackend(cfg = {}) {
     }
   };
 
+  // A Google call that can't work until the key's settings change turns that source off,
+  // with the reason kept for the diagnostics note.
+  const googleOff = {};
+  const guardGoogle = async (which, run) => {
+    try {
+      return await run();
+    } catch (err) {
+      if (err?.permanent) googleOff[which] = `${err.message} (skipped until reload)`;
+      throw err;
+    }
+  };
+
   const webProviders = [
     {
       name: 'Keenable',
       enabled: () => !keenableBlocked,
+      skipReason: () => (keenableBlocked ? 'blocked by the browser (CORS) earlier, skipped' : null),
       async search(q, page) {
         const { want, from } = pageWindow(page);
         const all = mapKeenableResults(await keenableCall({ path: '/v1/search', body: searchBody(q, want) }), q);
@@ -99,6 +124,26 @@ export function createBackend(cfg = {}) {
           results: all.slice(from, want).map(normalizeResult),
           next: hasMore(all.length, want) ? JSON.stringify({ p: 'Keenable', page: page + 1 }) : null,
         };
+      },
+    },
+    {
+      name: 'Google',
+      enabled: () => google.hasCse() && !googleOff.cse,
+      skipReason: () => googleOff.cse || null,
+      async search(q, page) {
+        const out = await guardGoogle('cse', () => google.cse(q, page));
+        return { results: out.results, next: out.more ? JSON.stringify({ p: 'Google', page: page + 1 }) : null };
+      },
+    },
+    {
+      // Gemini searching Google ("Grounding with Google Search").
+      name: 'Google AI search',
+      enabled: () => google.enabled() && !googleOff.gemini,
+      skipReason: () => googleOff.gemini || null,
+      async search(q, page) {
+        if (page > 1) return { results: [], next: null };
+        const out = await guardGoogle('gemini', () => google.groundedSearch(q));
+        return { results: out.results, next: null, googleSuggestions: out.suggestionsHtml || null };
       },
     },
     {
@@ -162,11 +207,13 @@ export function createBackend(cfg = {}) {
       const out = await provider.search(q, c.page || 1);
       return { results: dedupe(out.results), provider: provider.name, next: out.next };
     }
-    const out = await firstSuccessful(
-      webProviders.filter((p) => !p.enabled || p.enabled()),
-      (p) => p.search(q, 1)
-    );
-    return { ...out, results: dedupe(out.results) };
+    const active = webProviders.filter((p) => !p.enabled || p.enabled());
+    // Providers skipped this time still explain themselves in the diagnostics note.
+    const skipped = webProviders
+      .filter((p) => !active.includes(p) && p.skipReason?.())
+      .map((p) => `${p.name}: ${p.skipReason()}`);
+    const out = await firstSuccessful(active, (p) => p.search(q, 1));
+    return { ...out, errors: [...skipped, ...out.errors], results: dedupe(out.results) };
   }
 
   async function webFor(q, cursor = '') {
@@ -215,6 +262,13 @@ export function createBackend(cfg = {}) {
         const results = mapKeenableResults(data, q).map(toItem);
         results.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         if (results.length) return { results, provider: 'Keenable' };
+      } catch {}
+    }
+    if (google.enabled() && !googleOff.gemini) {
+      try {
+        const out = await guardGoogle('gemini', () => google.groundedSearch(q, { news: true }));
+        const results = out.results.map((r) => ({ ...toItem(r), source: r.host, host: r.host }));
+        if (results.length) return { results, provider: 'Google AI search' };
       } catch {}
     }
     if (llm.enabled() && llm.provider.searchModel) {
@@ -278,7 +332,12 @@ export function createBackend(cfg = {}) {
 
   const json = {
     async '/api/status'() {
-      return { ai: await llm.status({ resolve: false }), braveSearch: false, mode: 'static' };
+      return {
+        ai: await llm.status({ resolve: false }),
+        braveSearch: false,
+        videos: Boolean(cfg.googleKey),
+        mode: 'static',
+      };
     },
 
     async '/api/search'({ q, cursor }) {
@@ -302,6 +361,8 @@ export function createBackend(cfg = {}) {
         weather: weather || null,
         overview: llm.enabled() && !cursor && !weather && wantsOverview(q, web.results),
         elapsedMs: Math.round(performance.now() - started),
+        notes: web.errors || [],
+        googleSuggestions: web.googleSuggestions || null,
       };
     },
 
@@ -328,6 +389,16 @@ export function createBackend(cfg = {}) {
         searchImages(q, p, provider)
       );
       return { query: q, ...out, page: p };
+    },
+
+    async '/api/videos'({ q, page }) {
+      q = cleanQuery(q);
+      if (!cfg.googleKey) return { query: q, results: [], next: null, enabled: false };
+      const token = /^[\w-]{1,64}$/.test(page || '') ? page : '';
+      const out = await cache.misc.wrap(`yt:${token}:${q.toLowerCase()}`, () =>
+        searchYouTube(q, cfg.googleKey, { pageToken: token, region: cfg.region, getJSON: (url) => getJSON(url) })
+      );
+      return { query: q, ...out, enabled: true };
     },
 
     async '/api/related'({ q }) {
@@ -449,7 +520,21 @@ export function createBackend(cfg = {}) {
           );
         } catch (err) {
           if (signal?.aborted) throw err;
-          // No page reader in the browser: let Groq's browsing tool read and summarize it.
+          // No page reader in the browser: let Gemini (URL context) or Groq's browsing tool read it.
+          if (google.enabled() && !googleOff.gemini) {
+            onEvent('status', { stage: 'writing' });
+            const summary = await guardGoogle('gemini', () => google.summarizeUrl(target.href, q, { signal })).catch(
+              (e) => {
+                if (signal?.aborted) throw e;
+                return '';
+              }
+            );
+            if (summary) {
+              cache.ai.set(key, summary);
+              onEvent('token', { t: summary });
+              return onEvent('done', {});
+            }
+          }
           if (llm.provider.searchModel) {
             onEvent('status', { stage: 'writing' });
             const summary = await llm.askWithTools(

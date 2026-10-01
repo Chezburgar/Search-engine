@@ -10,6 +10,35 @@ import { createWeatherCard, createCalculator } from '../components/widgets.js';
 
 const wide = window.matchMedia('(min-width: 1200px)');
 
+// Explains which search sources failed before the one that answered.
+function whyNote(notes) {
+  return h(
+    'details',
+    { class: 'serp__why' },
+    h('summary', {}, icon('info'), 'Why these results?'),
+    h('p', {}, 'Spark tried these sources first:'),
+    h(
+      'ul',
+      {},
+      notes.map((n) => h('li', {}, n))
+    )
+  );
+}
+
+// Google's search suggestion chips, which must accompany Google-grounded results. The markup
+// comes from Google, so it runs in a sandboxed frame; its links open in a new tab.
+function googleChips(html) {
+  const frame = h('iframe', {
+    class: 'serp__google',
+    title: 'Related Google searches',
+    sandbox: 'allow-popups allow-popups-to-escape-sandbox',
+    referrerpolicy: 'no-referrer',
+    loading: 'lazy',
+  });
+  frame.srcdoc = `<!doctype html><meta charset="utf-8"><base target="_blank"><style>body{margin:0;background:transparent}</style>${html}`;
+  return frame;
+}
+
 export function emptyState({ title, text, actions = [] }) {
   return h(
     'div',
@@ -136,10 +165,13 @@ export async function renderAll(root, { q, signal, go, ai, openChat }) {
       })
     );
     meta.textContent = '';
+    if (data.notes?.length) meta.after(whyNote(data.notes));
     return;
   }
 
   meta.textContent = `${results.length} results${data.provider ? ` from ${data.provider}` : ''} · ${(data.elapsedMs / 1000).toFixed(2)} s`;
+  if (data.notes?.length) meta.after(whyNote(data.notes));
+  if (data.googleSuggestions) after.prepend(googleChips(data.googleSuggestions));
   const paaSlot = h('div', { class: 'paa-slot' });
   clear(list);
   results.forEach((r, i) => {

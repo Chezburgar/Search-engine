@@ -180,6 +180,109 @@ const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const text = (body, type = 'text/html') => new Response(body, { status: 200, headers: { 'Content-Type': type } });
 
+/* ------------------------------- Google ---------------------------------- */
+
+const GROUNDED_SITES = SITES.slice(0, 4);
+
+function geminiGrounded(prompt) {
+  const query = (prompt.match(/search: "([^"]+)"/) || [])[1] || 'query';
+  // Like Gemini: the answer lists pages, and grounding links are Google redirects whose
+  // titles are the bare domain.
+  const lines = GROUNDED_SITES.map(([title, url, snippet], i) =>
+    i === 2 ? `${title} ::: ${snippet}` : `${title} ::: ${url} ::: ${snippet}`
+  );
+  const text = lines.join('\n');
+  let offset = 0;
+  const supports = lines.map((line, i) => {
+    const seg = { startIndex: offset, endIndex: offset + line.length, text: line };
+    offset += line.length + 1;
+    return { segment: seg, groundingChunkIndices: [i] };
+  });
+  return {
+    candidates: [
+      {
+        content: { role: 'model', parts: [{ text }] },
+        groundingMetadata: {
+          webSearchQueries: [query],
+          searchEntryPoint: {
+            renderedContent: `<div class="container"><a class="chip" href="https://www.google.com/search?q=${encodeURIComponent(query)}">${query}</a></div>`,
+          },
+          groundingChunks: GROUNDED_SITES.map(([, url], i) => ({
+            web: {
+              uri: `https://vertexaisearch.cloud.google.com/grounding-api-redirect/r${i}`,
+              title: new URL(url).hostname.replace(/^www\./, ''),
+            },
+          })),
+          groundingSupports: supports,
+        },
+      },
+    ],
+  };
+}
+
+function youtubeSearch(q) {
+  return {
+    nextPageToken: 'PAGE2',
+    items: Array.from({ length: 6 }, (_, i) => ({
+      id: { kind: 'youtube#video', videoId: `vid${i}abcdef` },
+      snippet: {
+        title: `${q} explained &amp; visualized #${i + 1}`,
+        description: `A video about ${q}.`,
+        channelTitle: `Channel ${i + 1}`,
+        publishedAt: '2026-08-01T12:00:00Z',
+        liveBroadcastContent: 'none',
+        thumbnails: { high: { url: `https://img.mock.test/${i}.svg` } },
+      },
+    })),
+  };
+}
+
+/* ------------------------------ StudentVUE -------------------------------- */
+
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+export const SVUE_XML = {
+  StudentInfo: `<StudentInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema"><FormattedName>Alex Kim</FormattedName><PermID>123456</PermID><Grade>10</Grade><CurrentSchool>Mock High School</CurrentSchool><NickName /></StudentInfo>`,
+  Gradebook: (period) =>
+    `<Gradebook><ReportingPeriods><ReportPeriod Index="0" GradePeriod="MP1 Interim" StartDate="8/25/2026" EndDate="9/19/2026" /><ReportPeriod Index="1" GradePeriod="MP1" StartDate="8/25/2026" EndDate="11/3/2026" /></ReportingPeriods>` +
+    `<ReportingPeriod GradePeriod="${period === 0 ? 'MP1 Interim' : 'MP1'}" StartDate="8/25/2026" EndDate="11/3/2026" />` +
+    `<Courses>` +
+    `<Course Period="1" Title="ALGEBRA 2 HN A" Room="210" Staff="Lee, Dana" StaffEMail="dana_lee@mcpsmd.test"><Marks><Mark MarkName="MP1" CalculatedScoreString="B" CalculatedScoreRaw="${period === 0 ? '84.0' : '86.5'}"><GradeCalculationSummary><AssignmentGradeCalc Type="All Tasks / Assessments" Weight="90%" Points="85.00" PointsPossible="100.00" WeightedPct="76.5%" CalculatedMark="B" /><AssignmentGradeCalc Type="Practice/Preparation" Weight="10%" Points="10.00" PointsPossible="10.00" WeightedPct="10%" CalculatedMark="A" /><AssignmentGradeCalc Type="TOTAL" Weight="100%" Points="95" PointsPossible="110" WeightedPct="86.5%" CalculatedMark="B" /></GradeCalculationSummary><Assignments>` +
+    `<Assignment GradebookID="a1" Measure="Unit 1 Test" Type="All Tasks / Assessments" Date="9/12/2026" DueDate="9/12/2026" Score="85 out of 100.0000" ScoreType="Raw Score" Points="85.00 / 100.0000" Notes="" />` +
+    `<Assignment GradebookID="a2" Measure="Homework 1 &amp; 2" Type="Practice/Preparation" Date="9/5/2026" DueDate="9/5/2026" Score="10 out of 10.0000" ScoreType="Raw Score" Points="10.00 / 10.0000" Notes="" />` +
+    `<Assignment GradebookID="a3" Measure="Unit 2 Test" Type="All Tasks / Assessments" Date="10/20/2026" DueDate="10/20/2026" Score="Not Graded" ScoreType="Raw Score" Points="100.0000 Points Possible" Notes="Study chapter 3" />` +
+    `</Assignments></Mark></Marks></Course>` +
+    `<Course Period="2" Title="AP BIOLOGY A" Room="305" Staff="Ortiz, Sam" StaffEMail="sam_ortiz@mcpsmd.test"><Marks><Mark MarkName="MP1" CalculatedScoreString="A" CalculatedScoreRaw="94.2"><GradeCalculationSummary /><Assignments><Assignment GradebookID="b1" Measure="Lab 1" Type="Labs" Date="9/10/2026" DueDate="9/10/2026" Score="47 out of 50.0000" Points="47.00 / 50.0000" Notes="" /></Assignments></Mark></Marks></Course>` +
+    `</Courses></Gradebook>`,
+  Attendance: `<Attendance Type="Period" StartPeriod="1" EndPeriod="8"><Absences><Absence AbsenceDate="9/15/2026" Reason="Illness" Note=""><Periods><Period Number="1" Name="Excused Absence" Reason="Illness" Course="ALGEBRA 2 HN A" Staff="Lee, Dana" /><Period Number="2" Name="" Reason="" Course="" Staff="" /></Periods></Absence><Absence AbsenceDate="9/22/2026" Reason="Tardy" Note=""><Periods><Period Number="1" Name="Tardy" Reason="Tardy" Course="ALGEBRA 2 HN A" Staff="Lee, Dana" /></Periods></Absence></Absences></Attendance>`,
+  StudentClassList: `<StudentClassSchedule><ClassLists><ClassListing Period="1" CourseTitle="ALGEBRA 2 HN A" RoomName="210" Teacher="Lee, Dana" TeacherEmail="dana_lee@mcpsmd.test" SectionGU="s1" /><ClassListing Period="2" CourseTitle="AP BIOLOGY A" RoomName="305" Teacher="Ortiz, Sam" TeacherEmail="sam_ortiz@mcpsmd.test" SectionGU="s2" /></ClassLists></StudentClassSchedule>`,
+  StudentCalendar: `<CalendarListing><EventLists><EventList Date="10/9/2026" Title="No school" DayType="Holiday" /></EventLists></CalendarListing>`,
+};
+
+// Answers a ProcessWebServiceRequestMultiWeb envelope the way StudentVUE does.
+export function studentVueResponse(envelope) {
+  const field = (name) => (envelope.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`)) || [])[1] || '';
+  const unescape = (s) =>
+    s
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&');
+  const method = field('methodName');
+  const password = unescape(field('password'));
+  const params = unescape(field('paramStr'));
+  let inner;
+  if (password !== 'correct-horse') {
+    inner = '<RT_ERROR ERROR_MESSAGE="Invalid user id or password"><STACK_TRACE /></RT_ERROR>';
+  } else {
+    const fixture = SVUE_XML[method];
+    const period = (params.match(/<ReportPeriod>(\d+)<\/ReportPeriod>/) || [])[1];
+    inner = typeof fixture === 'function' ? fixture(period == null ? 1 : Number(period)) : fixture;
+  }
+  return `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><ProcessWebServiceRequestMultiWebResponse xmlns="http://edupoint.com/webservices/"><ProcessWebServiceRequestMultiWebResult>${esc(inner)}</ProcessWebServiceRequestMultiWebResult></ProcessWebServiceRequestMultiWebResponse></soap:Body></soap:Envelope>`;
+}
+
 async function mockFetch(input, init = {}) {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
   calls.push({ url: url.href, method: init.method || 'GET', body: init.body, headers: init.headers || {} });
@@ -252,6 +355,72 @@ async function mockFetch(input, init = {}) {
       return json({ error: { message: 'reasoning_format is not supported with this model' } }, 400);
     }
     return chatReply(body, { think: /qwen3/.test(body.model) });
+  }
+  if (host === 'generativelanguage.googleapis.com') {
+    const key = (init.headers || {})['x-goog-api-key'] || url.searchParams.get('key');
+    if (key === 'AIza_blocked') {
+      return json(
+        {
+          error: {
+            code: 403,
+            message: `Requests to this API generativelanguage.googleapis.com method google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent are blocked.`,
+            status: 'PERMISSION_DENIED',
+          },
+        },
+        403
+      );
+    }
+    if (url.pathname.endsWith('/models')) {
+      return json({
+        models: [
+          { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/gemini-3.5-flash-image', supportedGenerationMethods: ['generateContent'] },
+          { name: 'models/text-embedding-005', supportedGenerationMethods: ['embedContent'] },
+        ],
+      });
+    }
+    const body = JSON.parse(init.body || '{}');
+    const prompt = body.contents?.[0]?.parts?.[0]?.text || '';
+    if (body.tools?.[0]?.url_context) {
+      return json({
+        candidates: [{ content: { parts: [{ text: '**TL;DR:** Gemini read the page.\n- Point one' }] } }],
+      });
+    }
+    return json(geminiGrounded(prompt));
+  }
+  if (host === 'www.googleapis.com') {
+    if (url.pathname === '/customsearch/v1') {
+      if (!url.searchParams.get('cx'))
+        return json({ error: { code: 400, message: 'Request contains an invalid argument.' } }, 400);
+      return json({
+        searchInformation: { totalResults: '1200' },
+        items: SITES.slice(0, 10).map(([title, link, snippet]) => ({ title, link, snippet })),
+      });
+    }
+    if (url.pathname === '/youtube/v3/search') return json(youtubeSearch(url.searchParams.get('q')));
+    if (url.pathname === '/youtube/v3/videos') {
+      return json({
+        items: url.searchParams
+          .get('id')
+          .split(',')
+          .map((id, i) => ({
+            id,
+            contentDetails: { duration: i === 0 ? 'PT1H2M3S' : 'PT4M5S' },
+            statistics: { viewCount: String(1500 * (i + 1)) },
+          })),
+      });
+    }
+  }
+  if (host === 'studentvuelib.up.railway.app' && url.pathname === '/fulfillAxios') {
+    const body = JSON.parse(init.body || '{}');
+    if (body.url !== 'https://md-mcps-psv.edupoint.com/Service/PXPCommunication.asmx') {
+      return json({ status: false, message: 'Unknown district' });
+    }
+    return json({ status: true, response: studentVueResponse(body.xml) });
+  }
+  if (host === 'md-mcps-psv.edupoint.com' && url.pathname === '/Service/PXPCommunication.asmx') {
+    return text(studentVueResponse(String(init.body || '')), 'text/xml');
   }
   if (host === 'api.keenable.ai') {
     if (url.pathname.startsWith('/v1/search')) {

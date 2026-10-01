@@ -8,6 +8,9 @@ import { RateLimiter } from './lib/ratelimit.js';
 import { searchWeb } from './providers/web.js';
 import { searchNews } from './providers/news.js';
 import { searchImages } from './providers/images.js';
+import { searchVideos, videosEnabled } from './providers/google.js';
+import { ASMX, METHODS, soapEnvelope } from '../public/js/grades/studentvue.js';
+import { request } from './lib/http.js';
 import { suggest } from './providers/suggest.js';
 import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
@@ -43,6 +46,7 @@ const cache = {
   ai: new Cache({ max: 500, ttl: 20 * 60 * 1000 }),
 };
 const aiLimiter = new RateLimiter(config.aiRateLimit);
+const gradesLimiter = new RateLimiter({ max: 120, windowMs: 10 * 60 * 1000 });
 
 /* -------------------------------- helpers -------------------------------- */
 
@@ -58,6 +62,7 @@ const SECURITY_HEADERS = {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https: http:",
     "connect-src 'self'",
+    'frame-src https://www.youtube-nocookie.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -228,7 +233,7 @@ const routes = {
   },
 
   async 'GET /api/status'(req, res) {
-    json(res, 200, { ai: await aiStatus(), braveSearch: Boolean(config.braveKey) });
+    json(res, 200, { ai: await aiStatus(), braveSearch: Boolean(config.braveKey), videos: videosEnabled() });
   },
 
   async 'GET /api/search'(req, res, url) {
@@ -250,7 +255,8 @@ const routes = {
       weather: weather || null,
       overview: aiEnabled() && !cursor && !weather && !isMath(q) && !isNavigational(q, web.results),
       elapsedMs: Date.now() - started,
-      ...(web.results.length ? {} : { errors: web.errors }),
+      notes: web.errors || [],
+      googleSuggestions: web.googleSuggestions || null,
     });
   },
 
@@ -288,6 +294,18 @@ const routes = {
     const out = await cache.images.wrap(key, () => searchImages(q, { page, provider }));
     if (!out.results.length) cache.images.delete(key);
     json(res, 200, { query: q, results: out.results, provider: out.provider, more: out.more, page });
+  },
+
+  async 'GET /api/videos'(req, res, url) {
+    const q = cleanQuery(url.searchParams.get('q'));
+    if (!q) return json(res, 400, { error: 'Missing query' });
+    if (!videosEnabled()) return json(res, 200, { query: q, results: [], next: null, enabled: false });
+    const token = url.searchParams.get('page') || '';
+    const pageToken = /^[\w-]{1,64}$/.test(token) ? token : '';
+    const key = `yt:${pageToken}:${q.toLowerCase()}`;
+    const out = await cache.images.wrap(key, () => searchVideos(q, pageToken));
+    if (!out.results.length) cache.images.delete(key);
+    json(res, 200, { query: q, ...out, enabled: true });
   },
 
   // Streams a grounded AI overview: `sources` → `token`* → `done`.
@@ -363,6 +381,49 @@ const routes = {
     } catch (err) {
       console.error('[spark] related error:', err.message);
       json(res, 200, { questions: [] });
+    }
+  },
+
+  // Spark Grades: relays one StudentVUE call to MCPS (fixed host, fixed list of read-only
+  // methods). Answers like the public StudentVUE relay: { status, response: soapXml }.
+  // Credentials pass straight through and are never logged or stored.
+  async 'POST /api/studentvue'(req, res) {
+    if (!gradesLimiter.take(clientIp(req)).ok) {
+      return json(res, 429, { status: false, message: 'Too many requests. Try again in a few minutes.' });
+    }
+    const body = await readBody(req, 16 * 1024);
+    const { username, password, method, paramStr } = body || {};
+    const strings = [username, password, method, paramStr].every((v) => typeof v === 'string');
+    if (
+      !strings ||
+      !username ||
+      !password ||
+      !METHODS.includes(method) ||
+      !/^<Parms>[\w<>/ ]*<\/Parms>$/.test(paramStr)
+    ) {
+      return json(res, 400, { status: false, message: 'Invalid StudentVUE request.' });
+    }
+    try {
+      const upstream = await request(ASMX, {
+        method: 'POST',
+        timeout: 25000,
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          SOAPAction: 'http://edupoint.com/webservices/ProcessWebServiceRequestMultiWeb',
+        },
+        body: soapEnvelope({ username, password, method, paramStr }),
+      });
+      const text = await upstream.text();
+      if (!upstream.ok && !/ProcessWebServiceRequestMultiWebResult/.test(text)) {
+        return json(res, 502, { status: false, message: `MCPS StudentVUE answered ${upstream.status}.` });
+      }
+      json(res, 200, { status: true, response: text }, { 'Cache-Control': 'no-store' });
+    } catch (err) {
+      json(res, 502, {
+        status: false,
+        message:
+          err?.name === 'TimeoutError' ? 'MCPS StudentVUE took too long to answer.' : "Couldn't reach MCPS StudentVUE.",
+      });
     }
   },
 
@@ -471,7 +532,7 @@ const MIME = {
 const gzipCache = new Map();
 
 function serveStatic(req, res, pathname) {
-  let rel = pathname === '/' || pathname === '/search' ? '/index.html' : pathname;
+  let rel = pathname === '/' || pathname === '/search' || pathname === '/grades' ? '/index.html' : pathname;
   let file;
   try {
     rel = decodeURIComponent(rel);

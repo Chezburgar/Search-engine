@@ -39,12 +39,14 @@ export function normalizeResult(r) {
     return null;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  const title = stripTags(r.title || '') || hostOf(url.href);
+  // `site` names the real website when `url` is a redirect (Google grounding links).
+  const site = r.site || '';
+  const title = stripTags(r.title || '') || site || hostOf(url.href);
   return {
     title: title.slice(0, 200),
     url: url.href,
-    host: hostOf(url.href),
-    breadcrumb: breadcrumb(url.href),
+    host: site || hostOf(url.href),
+    breadcrumb: site ? `https://${site}` : breadcrumb(url.href),
     snippet: stripTags(r.snippet || '').slice(0, 400),
     date: r.date || null,
     thumbnail: r.thumbnail || null,
@@ -67,17 +69,28 @@ export function dedupe(results) {
 // What the results list needs; extracts stay on the server / in the AI layer.
 export const forDisplay = (results) => results.map(({ extract, ...r }) => r);
 
-// Try each provider in order until one returns results.
+// A short, human reason for a failed upstream call.
+export function describeError(err) {
+  if (!err) return 'unknown error';
+  if (err.name === 'TimeoutError' || /timed? ?out|aborted due to timeout/i.test(err.message)) return 'timed out';
+  if (err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(err.message)) {
+    return 'blocked by the browser (CORS) or unreachable';
+  }
+  return err.message || String(err);
+}
+
+// Try each provider in order until one returns results. `errors` lists why the
+// earlier ones were skipped, so the UI can explain a fallback.
 export async function firstSuccessful(providers, run) {
   const errors = [];
   for (const provider of providers) {
     try {
       const out = await run(provider);
-      if (out && out.results && out.results.length) return { ...out, provider: provider.name };
+      if (out && out.results && out.results.length) return { ...out, provider: provider.name, errors };
       errors.push(`${provider.name}: no results`);
     } catch (err) {
       if (err?.name === 'AbortError') throw err;
-      errors.push(`${provider.name}: ${err.message}`);
+      errors.push(`${provider.name}: ${describeError(err)}`);
     }
   }
   return { results: [], provider: null, errors };

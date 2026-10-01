@@ -60,6 +60,23 @@ export const ICONS = {
   ),
   sparkle:
     '<svg viewBox="0 0 24 24"><path fill="url(#spark-grad)" d="M11 4.5c.66 5.04 3.46 7.84 8.5 8.5-5.04.66-7.84 3.46-8.5 8.5-.66-5.04-3.46-7.84-8.5-8.5 5.04-.66 7.84-3.46 8.5-8.5Z"/><path fill="url(#spark-grad)" d="M19 1.5c.3 1.8 1.2 2.7 3 3-1.8.3-2.7 1.2-3 3-.3-1.8-1.2-2.7-3-3 1.8-.3 2.7-1.2 3-3Z"/></svg>',
+  play: s('<path d="M7 4.5v15l12.5-7.5Z" fill="currentColor"/>'),
+  video: s('<rect x="2.5" y="5" width="14" height="14" rx="3"/><path d="m16.5 10 5-3v10l-5-3"/>'),
+  cap: s('<path d="M2 9.5 12 5l10 4.5-10 4.5Z"/><path d="M6 11.5V16c0 1.4 2.7 3 6 3s6-1.6 6-3v-4.5M22 9.5V15"/>'),
+  calendar: s('<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>'),
+  user: s('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  logout: s('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),
+  eye: s('<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: s(
+    '<path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.3M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M3 3l18 18M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'
+  ),
+  pencil: s('<path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/>'),
+  trash: s('<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>'),
+  lock: s('<rect x="4" y="10.5" width="16" height="11" rx="2.5"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>'),
+  trend: s('<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>'),
+  grid: s(
+    '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>'
+  ),
   sparkleSolid:
     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 4.5c.66 5.04 3.46 7.84 8.5 8.5-5.04.66-7.84 3.46-8.5 8.5-.66-5.04-3.46-7.84-8.5-8.5 5.04-.66 7.84-3.46 8.5-8.5Z"/><path d="M19 1.5c.3 1.8 1.2 2.7 3 3-1.8.3-2.7 1.2-3 3-.3-1.8-1.2-2.7-3-3 1.8-.3 2.7-1.2 3-3Z"/></svg>',
 };

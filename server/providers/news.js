@@ -3,6 +3,7 @@ import { fetchJSON, fetchText, qs } from '../lib/http.js';
 import { attr, decodeEntities, stripTags, tagText } from '../lib/html.js';
 import { parseRssItems } from './web.js';
 import { firstSuccessful, hostOf } from './normalize.js';
+import { googleNews as googleAiNews } from './google.js';
 
 function toISO(date) {
   const d = new Date(date);
@@ -111,7 +112,7 @@ const bingNews = {
 
 export async function searchNews(q) {
   const out = await firstSuccessful(
-    [brave, googleNews, bingNews].filter((p) => p.enabled()),
+    [brave, googleNews, bingNews, googleAiNews].filter((p) => p.enabled()),
     async (p) => {
       const r = await p.search(q);
       return { results: r.results.filter(Boolean) };

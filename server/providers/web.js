@@ -4,6 +4,7 @@ import { attr, decodeEntities, stripTags, tagText } from '../lib/html.js';
 import { dedupe, firstSuccessful, normalizeResult } from './normalize.js';
 import { encodeCursor, decodeCursor } from './cursor.js';
 import { keenable } from './keenable.js';
+import { googleCse, googleGrounded } from './google.js';
 
 export { encodeCursor, decodeCursor };
 
@@ -198,7 +199,7 @@ const wikipedia = {
   },
 };
 
-export const WEB_PROVIDERS = [brave, keenable, duckduckgo, bing, wikipedia];
+export const WEB_PROVIDERS = [brave, keenable, googleCse, googleGrounded, duckduckgo, bing, wikipedia];
 
 export async function searchWeb(q, { cursor, safe = 'moderate' } = {}) {
   if (cursor) {

@@ -16,3 +16,16 @@ export const homeUrl = () => ROOT;
 export function isResultsPage(url = new URL(location.href)) {
   return Boolean(url.searchParams.get('q')?.trim()) && (STATIC || url.pathname.endsWith('/search'));
 }
+
+// Spark Grades: /grades on the server, ?page=grades on Pages. `params` are the grades
+// view's own state (g = view, c = course, mp = marking period).
+export function gradesUrl(params = {}) {
+  const p = new URLSearchParams(STATIC ? { page: 'grades' } : {});
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, v);
+  const qs = p.toString();
+  return `${ROOT}${STATIC ? '' : 'grades'}${qs ? `?${qs}` : ''}`;
+}
+
+export function isGradesPage(url = new URL(location.href)) {
+  return STATIC ? url.searchParams.get('page') === 'grades' : url.pathname.endsWith('/grades');
+}

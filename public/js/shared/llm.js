@@ -199,6 +199,28 @@ export function searchResultsFrom(executedTools) {
   return found;
 }
 
+// Fallback when no tool output came back: the links in the answer text itself.
+export function linksFrom(text = '') {
+  const found = [];
+  const seen = new Set();
+  const add = (url, title, content) => {
+    url = url.replace(/[).,;]+$/, '');
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
+    seen.add(url);
+    found.push({ url, title: title.trim(), content: content.trim() });
+  };
+  for (const line of String(text || '').split('\n')) {
+    const md = [...line.matchAll(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g)];
+    const rest = line
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1')
+      .replace(/^[\s*\-\d.)]+/, '')
+      .replace(/\*\*/g, '');
+    if (md.length) md.forEach((m) => add(m[2], m[1], rest));
+    else (line.match(/https?:\/\/[^\s<>"')\]]+/g) || []).forEach((u) => add(u, '', rest.replace(u, '')));
+  }
+  return found;
+}
+
 /* --------------------------------- client --------------------------------- */
 
 export function createLLM({
@@ -353,7 +375,9 @@ export function createLLM({
     );
     if (!res.ok) throw await errorFrom(res);
     const data = await res.json();
-    return searchResultsFrom(data.choices?.[0]?.message?.executed_tools);
+    const message = data.choices?.[0]?.message || {};
+    const found = searchResultsFrom(message.executed_tools);
+    return found.length ? found : linksFrom(message.content);
   }
 
   // A one-off answer from the provider's tool-using system (it can search and visit pages).

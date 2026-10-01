@@ -1,6 +1,6 @@
 import { h, icon } from './lib/dom.js';
 import { aiStatus } from './lib/api.js';
-import { searchUrl, homeUrl, isResultsPage } from './lib/routes.js';
+import { searchUrl, homeUrl, isResultsPage, gradesUrl, isGradesPage } from './lib/routes.js';
 import { settings, recent } from './lib/store.js';
 import { createSearchBox } from './components/searchbox.js';
 import { createSettingsMenu, installCitationTips } from './components/panels.js';
@@ -9,6 +9,10 @@ import { renderAll } from './views/all.js';
 import { renderAI } from './views/ai.js';
 import { renderImages } from './views/images.js';
 import { renderNews } from './views/news.js';
+import { renderVideos } from './views/videos.js';
+
+// Spark Grades loads on first visit only.
+const renderGrades = (...args) => import('./views/grades.js').then((m) => m.renderGrades(...args));
 
 const app = document.getElementById('app');
 const TABS = [
@@ -16,11 +20,13 @@ const TABS = [
   { id: 'ai', label: 'Spark AI', icon: 'sparkle', view: renderAI },
   { id: 'images', label: 'Images', icon: 'image', view: renderImages },
   { id: 'news', label: 'News', icon: 'news', view: renderNews },
+  { id: 'videos', label: 'Videos', icon: 'video', view: renderVideos, when: () => features.videos },
 ];
 
 let shell = null;
 let pageController = null;
 let ai = { enabled: false };
+let features = { videos: false };
 
 // Hands an overview / "People also ask" answer to the Spark AI tab so the chat continues it.
 const handoff = {
@@ -44,6 +50,7 @@ function applyTheme() {
 function parseLocation() {
   const url = new URL(location.href);
   const q = (url.searchParams.get('q') || '').trim();
+  if (isGradesPage(url)) return { view: 'grades' };
   if (isResultsPage(url)) {
     const tab = TABS.some((t) => t.id === url.searchParams.get('tab')) ? url.searchParams.get('tab') : 'all';
     return { view: 'results', q, tab };
@@ -55,6 +62,20 @@ export function go(q, tab = 'all', { replace = false } = {}) {
   const url = searchUrl(q, tab);
   if (replace || url === location.pathname + location.search) history.replaceState(null, '', url);
   else history.pushState(null, '', url);
+  render();
+}
+
+function goGrades(params = {}, { replace = false } = {}) {
+  const url = gradesUrl(params);
+  if (replace) history.replaceState(null, '', url);
+  else history.pushState(null, '', url);
+  render();
+}
+
+function goHome(e) {
+  if (e && (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1)) return;
+  e?.preventDefault();
+  history.pushState(null, '', homeUrl());
   render();
 }
 
@@ -82,7 +103,7 @@ function buildShell() {
     onImage: ai.enabled ? askAboutImages : undefined,
   });
   const tabs = h('nav', { class: 'tabs', 'aria-label': 'Search type' });
-  const tabEls = TABS.map((t) => {
+  const tabEls = TABS.filter((t) => !t.when || t.when()).map((t) => {
     const a = h(
       'a',
       { class: `tab tab--${t.id}`, href: '#', dataset: { tab: t.id } },
@@ -169,7 +190,15 @@ function render() {
     shell = null;
     document.title = 'Spark';
     document.body.dataset.view = 'home';
-    renderHome(app, { go, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
+    renderHome(app, { go, goGrades, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
+    return;
+  }
+
+  if (loc.view === 'grades') {
+    shell = null;
+    document.body.dataset.view = 'grades';
+    window.scrollTo({ top: 0 });
+    renderGrades(app, { signal: pageController.signal, navigate: goGrades, home: goHome });
     return;
   }
 
@@ -207,6 +236,7 @@ applyTheme();
 installCitationTips();
 aiStatus().then((status) => {
   ai = status.ai || { enabled: false };
+  features = { videos: Boolean(status.videos) };
   document.documentElement.classList.toggle('ai-off', !ai.enabled);
   render();
 });

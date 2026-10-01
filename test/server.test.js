@@ -6,6 +6,9 @@ process.env.AI_API_KEY = '';
 process.env.AI_PROVIDER = '';
 process.env.XAI_MODEL = '';
 process.env.KEENABLE_API_KEY = 'keen_test';
+process.env.GOOGLE_API_KEY = '';
+process.env.GOOGLE_CSE_ID = '';
+process.env.GOOGLE_MODEL = '';
 process.env.MOCK_DELAY = '0';
 process.env.AI_RATE_LIMIT = '1000';
 
@@ -272,4 +275,43 @@ test('navigational queries skip the overview', () => {
   assert.equal(isNavigational('facebook login', [{ host: 'facebook.com' }]), true);
   assert.equal(isNavigational('rust', [{ host: 'rust-lang.org' }]), false);
   assert.equal(isNavigational('how do black holes form', [{ host: 'nasa.gov' }]), false);
+});
+
+test('Spark Grades: /grades serves the app and /api/studentvue relays to MCPS only', async () => {
+  const page = await fetch(`${base}/grades?g=schedule`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /<div id="app">/);
+
+  const post = (body) =>
+    fetch(`${base}/api/studentvue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const ok = await post({
+    username: '123456',
+    password: 'correct-horse',
+    method: 'Gradebook',
+    paramStr: '<Parms><ChildIntID>0</ChildIntID><ReportPeriod>1</ReportPeriod></Parms>',
+  });
+  assert.equal(ok.status, 200);
+  const data = await ok.json();
+  assert.equal(data.status, true);
+  assert.match(data.response, /ProcessWebServiceRequestMultiWebResult/);
+  const upstream = calls.filter((c) => c.url.startsWith('https://md-mcps-psv.edupoint.com/')).at(-1);
+  assert.match(upstream.body, /<methodName>Gradebook<\/methodName>/);
+  assert.match(upstream.body, /<userID>123456<\/userID>/);
+
+  // Only read-only StudentVUE methods with plain parameters are allowed.
+  for (const bad of [
+    { username: 'a', password: 'b', method: 'UpdateStudentInfo', paramStr: '<Parms></Parms>' },
+    { username: 'a', password: 'b', method: 'Gradebook', paramStr: '<Parms>"injected"</Parms>' },
+    { username: '', password: 'b', method: 'Gradebook', paramStr: '<Parms></Parms>' },
+  ]) {
+    assert.equal((await post(bad)).status, 400, JSON.stringify(bad));
+  }
+  const status = await (await fetch(`${base}/api/status`)).json();
+  assert.equal(status.videos, false);
+  const videos = await (await fetch(`${base}/api/videos?q=cats`)).json();
+  assert.equal(videos.enabled, false);
 });

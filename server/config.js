@@ -63,6 +63,11 @@ export const config = {
   trustProxy: process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true',
   ai: aiConfig(),
   braveKey: (process.env.BRAVE_API_KEY || '').trim(),
+  google: {
+    apiKey: (process.env.GOOGLE_API_KEY || '').trim(),
+    cx: (process.env.GOOGLE_CSE_ID || '').trim(),
+    model: (process.env.GOOGLE_MODEL || '').trim(),
+  },
   keenable: {
     apiKey: (process.env.KEENABLE_API_KEY || '').trim(),
     baseUrl: (process.env.KEENABLE_BASE_URL || 'https://api.keenable.ai').replace(/\/+$/, ''),

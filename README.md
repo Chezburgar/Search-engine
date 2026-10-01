@@ -14,8 +14,17 @@
 - Autocomplete with recent searches, keyboard navigation and voice search
 - Knowledge panels from Wikipedia
 - Instant answers: a full calculator for math queries, and a live 7-day forecast for "weather in …" queries
+- **Google results** through Gemini's "Grounding with Google Search" (or the Custom Search API), with Google's suggestion chips
 - **Images** tab with a justified grid, infinite scroll and a lightbox viewer
 - **News** tab with the latest headlines
+- **Videos** tab with YouTube results that play inside Spark
+
+**Spark Grades (MCPS)**
+- A **Grades** link on the home page opens StudentVUE grades for Montgomery County Public Schools, in Spark's style (a vanilla-JS take on GradeFlow)
+- Sign in with an MCPS student ID and StudentVUE password, or explore the demo
+- Overview with unweighted and weighted GPA (Honors/AP/IB +1 for A–C), average, grade spread, every class, upcoming work and recent grades, per marking period
+- Class pages with category breakdowns, **what-if** grades (edit any score or add made-up assignments) and a **"What do I need?"** calculator
+- Schedule and attendance
 
 **Spark AI (Groq or xAI Grok)**
 - **Spark Overview**: a streamed answer at the top of results, grounded in the top web results *and the text of the top pages*, with numbered citation chips you can hover and click
@@ -49,6 +58,9 @@ npm start                 # http://localhost:3000
 | `XAI_API_KEY` | **AI features**, option 2: an [xAI](https://console.x.ai) Grok key (`xai-…`). A key in the wrong variable still works; the prefix decides. |
 | `AI_MODEL` / `AI_CHAT_MODEL` / `AI_VISION_MODEL` | Optional. Pin models. Otherwise Spark lists the models your key can use and picks fast ones (Groq: GPT-OSS for text, Qwen 3.6 for images). |
 | `KEENABLE_API_KEY` | Recommended. [Keenable](https://keenable.ai) web search key. Without one, Spark uses Keenable's keyless endpoint (rate limited per IP), then DuckDuckGo, Bing and Wikipedia. |
+| `GOOGLE_API_KEY` | Optional. A Google API key (`AIza…`). Allow the **Generative Language API** on it for Google search (Gemini grounding), and the **YouTube Data API v3** for the Videos tab. |
+| `GOOGLE_CSE_ID` | Optional. A Programmable Search Engine ID; enables the Custom Search JSON API (closed to new customers, ends 2027-01-01). |
+| `GOOGLE_MODEL` | Optional. Pin the Gemini model used for Google search. |
 | `BRAVE_API_KEY` | Optional. [Brave Search API](https://brave.com/search/api/) key; when set it is tried before Keenable and also powers news and images. |
 | `PORT` / `HOST` | Where to listen (default `3000` / `0.0.0.0`). |
 | `SPARK_REGION` | Result region and language, e.g. `us-en`, `uk-en`, `de-de`. |
@@ -64,8 +76,9 @@ Browser (vanilla JS, no build step)
   │
   ├── /api/search, /api/news, /api/images, /api/suggest, /api/knowledge
   │       └─ provider chains with automatic fallback and in-memory caching
-  │            web:    Brave (if keyed) → Keenable → DuckDuckGo → Bing → Wikipedia
-  │            news:   Brave (if keyed) → Google News RSS → Bing News RSS
+  │            web:    Brave (if keyed) → Keenable → Google (CSE, then Gemini) → DuckDuckGo → Bing → Wikipedia
+  │            news:   Brave (if keyed) → Google News RSS → Bing News RSS → Google (Gemini)
+  │            videos: YouTube Data API
   │            images: Brave (if keyed) → Openverse → Wikimedia Commons
   │            weather: Open-Meteo, knowledge: Wikipedia
   │
@@ -81,7 +94,7 @@ Browser (vanilla JS, no build step)
 
 GitHub Pages can only host static files, so the Pages build has no server: an in-browser
 backend (`public/js/static/backend.js`) answers the same `/api/*` calls by calling
-Keenable, Grok, Wikipedia, Open-Meteo and Openverse directly from the visitor's browser.
+Keenable, Google, Groq/Grok, Wikipedia, Open-Meteo and Openverse directly from the visitor's browser.
 The live site is https://chezburgar.github.io/Search-engine/.
 
 **Publishing (GitHub Actions).** `.github/workflows/pages.yml` runs the tests, builds the
@@ -89,7 +102,7 @@ site and deploys it on every push (or from Actions → *Deploy to GitHub Pages* 
 workflow*). Keys come from repository secrets, so they never enter git history. One-time setup:
 
 1. **Settings → Secrets and variables → Actions → New repository secret**: add
-   `GROQ_API_KEY` (or `XAI_API_KEY`) and `KEENABLE_API_KEY`.
+   `GROQ_API_KEY` (or `XAI_API_KEY`), `KEENABLE_API_KEY` and `GOOGLE_API_KEY`.
 2. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
 
 > **The keys are public on Pages.** The build writes them into `spark-config.js`, which
@@ -103,8 +116,10 @@ To build locally: `npm run build:pages` writes `dist/` (serve it with any static
 GitHub's push protection rejects builds that contain the xAI key, by design.
 
 Every API is called from the visitor's browser, so it must accept cross-origin (CORS)
-requests. Groq does. If Keenable refuses, Spark notices and switches to Groq's built-in web
-search (Compound) for results, news and page summaries; Wikipedia is the last resort.
+requests. Groq and Google do. If Keenable refuses, Spark switches to Google (Gemini grounding)
+and then Groq's built-in web search (Compound) for results, news and page summaries; Wikipedia
+is the last resort. **Why these results?** under the result count lists each source that was
+skipped and why (for example, a key whose API restrictions block the Gemini API).
 Compared with the server, the static build has no DuckDuckGo/Bing fallback, takes
 suggestions from Wikipedia, and has no per-visitor rate limiting.
 
@@ -115,12 +130,13 @@ server/
   index.js            HTTP server, routes, SSE streaming, static files
   config.js           .env loading and settings
   ai/                 Grok client, prompts, source building
-  providers/          web, news, images, suggestions, knowledge, weather
+  providers/          web, news, images, videos (Google), suggestions, knowledge, weather
   lib/                cache, rate limiter, HTML utilities, SSRF-safe fetch
 public/
   index.html, css/spark.css
   js/app.js           router and app shell
-  js/views/           home, all results, Spark AI, images, news
+  js/views/           home, all results, Spark AI, images, news, videos, grades
+  js/grades/          Spark Grades: StudentVUE client (MCPS), XML parser, grade math, demo data
   js/components/      search box, AI overview, results, panels, widgets
   js/lib/             DOM helpers, API/SSE client, routes, Markdown, calculator
   js/shared/          logic shared by the server and the static build (prompts, Grok client, parsers)
@@ -128,6 +144,23 @@ public/
 scripts/              build and deploy the GitHub Pages version
 test/                 unit and end-to-end API tests (upstreams mocked)
 ```
+
+## Spark Grades
+
+`?page=grades` on Pages (`/grades` on the server) is a StudentVUE client for Montgomery County
+Public Schools only (`https://md-mcps-psv.edupoint.com`). StudentVUE speaks SOAP and doesn't accept
+calls from other websites, so:
+
+- **GitHub Pages:** the browser sends each request through the CORS-enabled StudentVUE relay that
+  GradeFlow uses (`studentvuelib.up.railway.app`).
+- **Node server:** `POST /api/studentvue` forwards it to MCPS itself. It only accepts read-only
+  methods (StudentInfo, Gradebook, Attendance, StudentClassList, StudentCalendar), never logs or
+  stores credentials, and is rate limited per IP.
+
+Credentials stay in the browser: in `localStorage` with "Keep me signed in", otherwise in
+`sessionStorage` until the tab closes. What-if edits never leave the page. Grades use the MCPS scale
+(A 90+, B 80+, C 70+, D 60+, E below; 89.5 rounds up), and weighted GPA adds a point for A–C in
+Honors, AP and IB courses. Spark Grades is unofficial and not affiliated with MCPS or Edupoint.
 
 ## Development
 
