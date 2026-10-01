@@ -4,6 +4,15 @@ import { extractReadable, relevantPassages } from '../lib/html.js';
 import { Cache } from '../lib/cache.js';
 import { keenableFetch } from '../providers/keenable.js';
 import { baseSources } from '../../public/js/shared/sources.js';
+import {
+  htmlToReader,
+  textToMarkdown,
+  cleanReaderMarkdown,
+  wikipediaArticle,
+  wikipediaParseUrl,
+  wikipediaToReader,
+} from '../../public/js/shared/reader.js';
+import { fetchJSON } from '../lib/http.js';
 
 export { publicSources } from '../../public/js/shared/sources.js';
 
@@ -32,6 +41,46 @@ export function readPage(url, signal) {
       }
     }
     return fetchDirect(url, signal);
+  });
+}
+
+const readerCache = new Cache({ max: 200, ttl: 30 * 60 * 1000 });
+const hostOf = (url) => new URL(url).hostname.replace(/^www\./, '');
+
+// A page for a Spark tab's reader view: { url, title, site, markdown, source }.
+export function readForTab(url) {
+  return readerCache.wrap(url, async () => {
+    const wiki = wikipediaArticle(url);
+    if (wiki) {
+      try {
+        const page = wikipediaToReader(await fetchJSON(wikipediaParseUrl(wiki), { timeout: 8000 }), wiki);
+        if (page?.markdown) return { ...page, source: 'Wikipedia' };
+      } catch {}
+    }
+    let page = null;
+    try {
+      const res = await safeFetchPage(url, { timeout: 8000, maxBytes: 2_000_000 });
+      page = /html|xml/i.test(res.contentType)
+        ? { url: res.url, ...htmlToReader(res.text, res.url) }
+        : { url: res.url, title: '', site: hostOf(res.url), markdown: textToMarkdown(res.text) };
+      page.source = 'Spark';
+    } catch (err) {
+      if (!config.keenable.apiKey) throw err;
+    }
+    if ((!page || page.markdown.length < 150) && config.keenable.apiKey) {
+      const k = await keenableFetch(url, { maxChars: 40000 }).catch(() => null);
+      if (k?.text)
+        page = {
+          url: k.url,
+          title: k.title,
+          site: hostOf(url),
+          markdown: cleanReaderMarkdown(k.text),
+          source: 'Keenable',
+        };
+    }
+    if (!page || page.markdown.length < 40)
+      throw Object.assign(new Error("This page doesn't have readable text"), { status: 422 });
+    return { ...page, title: page.title || page.site };
   });
 }
 

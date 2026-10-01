@@ -236,7 +236,7 @@ function renderLogin(root, ctx) {
       'Use your MCPS StudentVUE login. ',
       h(
         'a',
-        { href: `${MCPS.host}/PXP2_Password_Help.aspx`, target: '_blank', rel: 'noopener' },
+        { href: `${MCPS.host}/PXP2_Password_Help.aspx`, target: '_blank', rel: 'noopener', 'data-external': '' },
         'Forgot your password?'
       )
     )

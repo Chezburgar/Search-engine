@@ -10,6 +10,8 @@ import { renderAI } from './views/ai.js';
 import { renderImages } from './views/images.js';
 import { renderNews } from './views/news.js';
 import { renderVideos } from './views/videos.js';
+import { tabs } from './tabs/tabs.js';
+import { createAssistant } from './tabs/assistant.js';
 
 // Spark Grades loads on first visit only.
 const renderGrades = (...args) => import('./views/grades.js').then((m) => m.renderGrades(...args));
@@ -26,6 +28,14 @@ const TABS = [
 let shell = null;
 let pageController = null;
 let ai = { enabled: false };
+let assistant = null;
+let sparkTitle = 'Spark';
+
+// The Spark tab's title; the browser tab shows it only while Spark (not a page) is showing.
+function setTitle(title) {
+  sparkTitle = title;
+  if (tabs.active === 'spark') document.title = title;
+}
 let features = { videos: false };
 
 // Hands an overview / "People also ask" answer to the Spark AI tab so the chat continues it.
@@ -92,7 +102,7 @@ function askAboutImages(images, text) {
 
 function onSettings(key) {
   if (key === 'theme') applyTheme();
-  if ((key === 'safe' || key === 'overview') && parseLocation().view === 'results') render();
+  if (key === 'safe' && parseLocation().view === 'results') render();
 }
 
 function buildShell() {
@@ -181,6 +191,7 @@ function buildShell() {
 }
 
 function render() {
+  tabs.noteSparkUrl();
   pageController?.abort();
   pageController = new AbortController();
   const loc = parseLocation();
@@ -188,7 +199,7 @@ function render() {
 
   if (loc.view === 'home') {
     shell = null;
-    document.title = 'Spark';
+    setTitle('Spark');
     document.body.dataset.view = 'home';
     renderHome(app, { go, goGrades, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
     return;
@@ -197,6 +208,7 @@ function render() {
   if (loc.view === 'grades') {
     shell = null;
     document.body.dataset.view = 'grades';
+    setTitle('Spark Grades');
     window.scrollTo({ top: 0 });
     renderGrades(app, { signal: pageController.signal, navigate: goGrades, home: goHome });
     return;
@@ -209,7 +221,7 @@ function render() {
   const changedQuery = shell.q !== loc.q;
   shell.update(loc);
   document.body.dataset.view = 'results';
-  document.title = `${loc.q} — Spark`;
+  setTitle(`${loc.q} — Spark`);
   if (changedQuery) recent.add(loc.q);
   window.scrollTo({ top: 0 });
 
@@ -229,6 +241,12 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Pages open in Spark tabs (set up first: it handles Back from a page tab).
+tabs.init({
+  spark: () => ({ title: sparkTitle, url: location.href }),
+  search: (q) => go(q),
+  toggleAssistant: () => assistant?.toggle(),
+});
 window.addEventListener('popstate', render);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
@@ -236,6 +254,7 @@ applyTheme();
 installCitationTips();
 aiStatus().then((status) => {
   ai = status.ai || { enabled: false };
+  if (ai.enabled) assistant = createAssistant({ go: (q, tab) => go(q, tab) });
   features = { videos: Boolean(status.videos) };
   document.documentElement.classList.toggle('ai-off', !ai.enabled);
   render();

@@ -13,7 +13,7 @@ const write = (key, value) => {
   } catch {}
 };
 
-const DEFAULTS = { theme: 'system', overview: 'auto', safe: 'moderate', history: true };
+const DEFAULTS = { theme: 'system', safe: 'moderate', history: true };
 
 export const settings = {
   get(key) {

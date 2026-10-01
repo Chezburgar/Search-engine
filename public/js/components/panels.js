@@ -1,6 +1,6 @@
 import { h, icon, fill } from '../lib/dom.js';
 import { streamAnswer } from './answer.js';
-import { sourceChip } from './overview.js';
+import { sourceChip } from './ai-bits.js';
 import { safe } from '../lib/api.js';
 import { searchUrl } from '../lib/routes.js';
 
@@ -212,11 +212,6 @@ export function createSettingsMenu({ settings, onChange }) {
       ['light', 'Light', 'sun'],
       ['dark', 'Dark', 'moon'],
       ['system', 'Auto', 'monitor'],
-    ]),
-    seg('overview', 'Spark AI overviews', [
-      ['auto', 'Always'],
-      ['manual', 'On request'],
-      ['off', 'Off'],
     ]),
     seg('safe', 'SafeSearch', [
       ['strict', 'Strict'],

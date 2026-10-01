@@ -77,7 +77,7 @@ export function attr(fragment, name) {
   return m ? decodeEntities(m[2] ?? m[3] ?? '') : '';
 }
 
-function metaContent(html, key) {
+export function metaContent(html, key) {
   const re = new RegExp(`<meta[^>]+(?:name|property)\\s*=\\s*["']${key}["'][^>]*>`, 'i');
   const tag = html.match(re);
   return tag ? attr(tag[0], 'content') : '';

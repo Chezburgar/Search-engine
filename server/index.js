@@ -14,24 +14,14 @@ import { request } from './lib/http.js';
 import { suggest } from './providers/suggest.js';
 import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
-import { aiEnabled, aiProvider, aiStatus, complete, streamChat } from './ai/llm.js';
+import { aiEnabled, aiProvider, aiStatus, complete, streamChat, agentStep } from './ai/llm.js';
+import { AGENT_TOOLS, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../public/js/shared/agent.js';
 import { sanitizeHistory, validChat, shouldSearch, toModelMessages } from '../public/js/shared/chat.js';
-import { buildSources, publicSources, readPage } from './ai/context.js';
+import { buildSources, publicSources, readPage, readForTab } from './ai/context.js';
 import { forDisplay } from './providers/normalize.js';
 import { assertPublic } from './lib/safe-fetch.js';
-import { isMath, isNavigational } from '../public/js/shared/intent.js';
-import { chatSearchQuery, newsSources } from '../public/js/shared/sources.js';
-
-export { isNavigational };
-import {
-  chatSystemPrompt,
-  chatUserMessage,
-  newsBriefMessages,
-  overviewMessages,
-  parseQuestions,
-  relatedMessages,
-  summarizeMessages,
-} from './ai/prompts.js';
+import { chatSearchQuery } from '../public/js/shared/sources.js';
+import { chatSystemPrompt, chatUserMessage, parseQuestions, relatedMessages, summarizeMessages } from './ai/prompts.js';
 
 const PUBLIC = path.join(ROOT, 'public');
 const MAX_QUERY = 400;
@@ -47,6 +37,7 @@ const cache = {
 };
 const aiLimiter = new RateLimiter(config.aiRateLimit);
 const gradesLimiter = new RateLimiter({ max: 120, windowMs: 10 * 60 * 1000 });
+const readLimiter = new RateLimiter({ max: 240, windowMs: 10 * 60 * 1000 });
 
 /* -------------------------------- helpers -------------------------------- */
 
@@ -62,7 +53,8 @@ const SECURITY_HEADERS = {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: https: http:",
     "connect-src 'self'",
-    'frame-src https://www.youtube-nocookie.com',
+    // Spark tabs can show pages live, in a frame.
+    'frame-src https: http:',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -253,7 +245,6 @@ const routes = {
       provider: web.provider,
       next: web.next || null,
       weather: weather || null,
-      overview: aiEnabled() && !cursor && !weather && !isMath(q) && !isNavigational(q, web.results),
       elapsedMs: Date.now() - started,
       notes: web.errors || [],
       googleSuggestions: web.googleSuggestions || null,
@@ -308,52 +299,21 @@ const routes = {
     json(res, 200, { query: q, ...out, enabled: true });
   },
 
-  // Streams a grounded AI overview: `sources` → `token`* → `done`.
-  async 'GET /api/overview'(req, res, url) {
-    const q = cleanQuery(url.searchParams.get('q'));
-    if (!q) return json(res, 400, { error: 'Missing query' });
-    const kind = url.searchParams.get('kind') === 'news' ? 'news' : 'web';
-    const safe = safeLevel(url.searchParams.get('safe'));
-    const stream = openStream(res);
-    if (!aiEnabled()) return aiUnavailable(stream);
-
-    const key = `ov:${kind}:${safe}:${q.toLowerCase()}`;
-    const hit = url.searchParams.has('fresh') ? null : cache.ai.get(key);
-    if (hit) {
-      stream.send('sources', hit.sources);
-      stream.send('token', { t: hit.text });
-      stream.send('done', { cached: true });
-      return stream.end();
-    }
-    if (!takeAiQuota(req, stream)) return;
-
+  // A page as reader-view Markdown, for Spark tabs and the tab assistant.
+  async 'GET /api/read'(req, res, url) {
+    let target;
     try {
-      stream.send('status', { stage: 'searching' });
-      let sources;
-      let messages;
-      if (kind === 'news') {
-        const news = await cache.news.wrap(q.toLowerCase(), () => searchNews(q));
-        sources = newsSources(news.results);
-        if (!sources.length) {
-          stream.send('error', { code: 'no_sources', message: 'There are no recent headlines to brief you on.' });
-          return stream.end();
-        }
-        messages = newsBriefMessages(q, sources);
-      } else {
-        const [web, knowledge] = await Promise.all([webResults(q, safe), knowledgeFor(q)]);
-        stream.send('status', { stage: 'reading', count: Math.min(web.results.length, 6) });
-        sources = await buildSources(q, web.results, { knowledge });
-        messages = overviewMessages(q, sources);
-      }
-      const shown = publicSources(sources);
-      stream.send('sources', shown);
-      stream.send('status', { stage: 'writing' });
-      const text = await pipeCompletion(stream, messages, { kind: 'search', temperature: 0.25, maxTokens: 700 });
-      if (text.trim()) cache.ai.set(key, { sources: shown, text });
-      stream.send('done', {});
-      stream.end();
+      target = new URL(url.searchParams.get('url') || '');
+    } catch {
+      return json(res, 400, { error: 'Invalid URL' });
+    }
+    if (!readLimiter.take(clientIp(req)).ok) return json(res, 429, { error: 'Too many pages opened. Try again soon.' });
+    try {
+      await assertPublic(target);
+      json(res, 200, await readForTab(target.href), { 'Cache-Control': 'private, max-age=600' });
     } catch (err) {
-      streamFailure(stream, err);
+      const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
+      json(res, status >= 500 ? 502 : status, { error: `Spark couldn't read this page (${err.message}).` });
     }
   },
 
@@ -424,6 +384,30 @@ const routes = {
         message:
           err?.name === 'TimeoutError' ? 'MCPS StudentVUE took too long to answer.' : "Couldn't reach MCPS StudentVUE.",
       });
+    }
+  },
+
+  // One step of the tab assistant (the loop and the tools run in the browser).
+  async 'POST /api/agent'(req, res) {
+    const body = await readBody(req, 400 * 1024);
+    const messages = sanitizeAgentMessages(body?.messages);
+    if (!messages) return json(res, 400, { error: 'Invalid assistant conversation' });
+    if (!aiEnabled()) return json(res, 503, { error: 'Spark AI is not set up on this server.' });
+    const verdict = aiLimiter.take(clientIp(req));
+    if (!verdict.ok) {
+      return json(res, 429, {
+        error: `You've reached the Spark AI limit for now. Try again in ${Math.ceil(verdict.retryAfter / 60)} min.`,
+      });
+    }
+    try {
+      const message = await agentStep({
+        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(body.tabs)) }, ...messages],
+        tools: body.final ? undefined : AGENT_TOOLS,
+      });
+      json(res, 200, { message });
+    } catch (err) {
+      console.error('[spark] agent error:', err.message);
+      json(res, err.status === 429 ? 429 : 502, { error: err.message || 'Spark AI ran into a problem.' });
     }
   },
 

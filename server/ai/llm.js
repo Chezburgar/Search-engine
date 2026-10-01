@@ -11,4 +11,5 @@ export const aiProvider = llm.provider;
 export const resolveModel = llm.resolveModel;
 export const streamChat = llm.streamChat;
 export const complete = llm.complete;
+export const agentStep = llm.agentStep;
 export const aiStatus = llm.status;

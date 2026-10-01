@@ -30,14 +30,17 @@
 
 **Spark AI (Groq or xAI Grok)**
 
-- **Spark Overview**: a streamed answer at the top of results, grounded in the top web results _and the text of the top pages_, with numbered citation chips you can hover and click
-- **Ask a follow-up** from the overview to continue the conversation in the Spark AI tab
 - **Spark AI tab**: conversational search. Each question runs a fresh web search, shows source cards, and streams a cited answer, followed by suggested follow-ups
 - **Image questions**: attach, paste or drop up to 4 images in the chat, or use the image button in the search box. Images are resized in the browser and sent to a vision model
 - **People also ask**: AI-generated questions that expand into cited answers
 - **Summarize** any result: Spark reads the page and writes a TL;DR
-- **Spark Briefing** on the News tab: a summary of the latest headlines
 - An "Ask Spark" row in autocomplete and a ✦ button in the search box jump straight to an AI answer
+- No AI overview on results: the only AI call a search makes is a small one for the People also ask questions; full answers run only when you ask
+
+**Spark tabs and the tab assistant**
+
+- Links open in **Spark tabs** instead of new browser tabs: a tab strip at the top, with back/forward, an address box, and **Reader** (the page's text, cleanly laid out) or **Live** (the real site in a frame, for sites that allow it) views. Ctrl/⌘-click still opens a browser tab
+- The **Assistant** (✦ button) reads and controls your Spark tabs on request: "summarize this tab", "compare my open tabs", "open the top 3 results", "find the pricing section", "close all my tabs". It uses AI tool calling; every action it takes is listed under its answer
 
 **Polish**
 
@@ -45,7 +48,7 @@
 - Responsive from phones to wide screens
 - Respects reduced-motion settings
 - Installable as a PWA, and browsers can add it as a search engine (OpenSearch)
-- Settings for theme, AI overviews (always / on request / off) and SafeSearch
+- Settings for theme and SafeSearch
 
 ## Quick start
 
@@ -87,13 +90,35 @@ Browser (vanilla JS, no build step)
   │            images: Brave (if keyed) → Openverse → Wikimedia Commons
   │            weather: Open-Meteo, knowledge: Wikipedia
   │
-  └── /api/overview, /api/chat, /api/summarize   (Server-Sent Events)
-          └─ search → fetch and trim top pages → numbered sources → Grok (streamed)
+  ├── /api/chat, /api/summarize   (Server-Sent Events)
+  │       └─ search → fetch and trim top pages → numbered sources → AI (streamed)
+  │
+  ├── /api/read     a page as reader-view Markdown, for Spark tabs and the assistant
+  └── /api/agent    one step of the tab assistant (the model's next message or tool calls)
 ```
 
 - **Grounded answers.** The AI never answers from a bare prompt. Spark gathers numbered sources (Keenable returns page text with each result; for other providers the top pages are fetched within a 2.5 s budget), keeps the passages most relevant to the query, and Grok cites them inline as `[n]`.
-- **Model choice.** On startup Spark lists the models your key can use and ranks them, preferring fast, non-reasoning, newer models so overviews start streaming quickly. If a model is retired, it automatically retries with the next best one.
+- **Model choice.** On startup Spark lists the models your key can use and ranks them, preferring fast, non-reasoning, newer models so answers start streaming quickly. If a model is retired, it automatically retries with the next best one.
 - **Safety.** Page fetching for summaries blocks private and internal addresses (SSRF protection, re-checked on every redirect). AI output is rendered by a small Markdown renderer that escapes all HTML. Strict CSP and security headers are set, AI endpoints are rate-limited per IP, and repeated questions are served from cache.
+
+## Spark tabs and the assistant
+
+Clicking any web link inside Spark opens it in a Spark tab (tabs last for the browser session).
+
+- **Reader view** (default) shows the page's text from `/api/read`. On the Node server, Spark fetches
+  the page itself (with the same SSRF protection as summaries) and converts its HTML to Markdown;
+  Wikipedia articles come from Wikipedia's API. On GitHub Pages the browser can't fetch most sites,
+  so it tries Wikipedia's API, then Keenable's fetcher, then [Jina Reader](https://jina.ai/reader)
+  (`r.jina.ai`, which receives the address of the page you open), and finally Gemini, whose version
+  is a rewrite in its own words and is labelled as such.
+- **Live view** shows the real site in a frame. Many sites refuse to be framed; Spark remembers which
+  sites you switched to Live.
+- **The assistant** runs its loop in your browser, where the tabs are. Each step goes to `/api/agent`,
+  which asks the AI (Groq or Grok tool calling) for its next move; the browser then runs the tools:
+  `list_tabs`, `read_tab`, `open_tab`, `navigate_tab`, `switch_tab`, `close_tabs`, `find_in_tab`,
+  `set_tab_view`, `search_web` and `show_search`. It controls Spark tabs only, not your browser's own
+  tabs (a web page can't; that would need a browser extension). Page text is passed to the model as
+  data, and the model is told never to follow instructions found in pages.
 
 ## GitHub Pages (static) version
 
@@ -143,7 +168,8 @@ public/
   js/app.js           router and app shell
   js/views/           home, all results, Spark AI, images, news, videos, grades
   js/grades/          Spark Grades: StudentVUE client (MCPS), XML parser, grade math, demo data
-  js/components/      search box, AI overview, results, panels, widgets
+  js/components/      search box, results, panels, widgets, AI answer bits
+  js/tabs/            Spark tabs (strip, reader/live viewer) and the tab assistant
   js/lib/             DOM helpers, API/SSE client, routes, Markdown, calculator
   js/shared/          logic shared by the server and the static build (prompts, Grok client, parsers)
   js/static/          in-browser backend used by the GitHub Pages build

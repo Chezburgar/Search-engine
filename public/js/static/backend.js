@@ -18,18 +18,17 @@ import { normalizeResult, dedupe, forDisplay, firstSuccessful, hostOf } from '..
 import { wikiSearchUrl, wikiSummaryUrl, pickEntity, knowledgeFromSummary } from '../shared/knowledge.js';
 import { parseWeatherQuery, lookupWeather } from '../shared/weather.js';
 import { openverseUrl, mapOpenverse, commonsUrl, mapCommons } from '../shared/images.js';
-import { wantsOverview } from '../shared/intent.js';
-import { baseSources, publicSources, newsSources, chatSearchQuery } from '../shared/sources.js';
+import { baseSources, publicSources, chatSearchQuery } from '../shared/sources.js';
 import { stripTags, relevantPassages } from '../shared/text.js';
 import { createGoogle } from '../shared/google.js';
+import { AGENT_TOOLS, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../shared/agent.js';
+import { wikipediaArticle, wikipediaParseUrl, wikipediaToReader, cleanReaderMarkdown } from '../shared/reader.js';
 import { searchYouTube } from '../shared/youtube.js';
 import {
-  overviewMessages,
   relatedMessages,
   chatSystemPrompt,
   chatUserMessage,
   summarizeMessages,
-  newsBriefMessages,
   parseQuestions,
 } from '../shared/prompts.js';
 
@@ -319,6 +318,59 @@ export function createBackend(cfg = {}) {
     return { results: [], provider: null };
   }
 
+  // A page for a Spark tab's reader view: Wikipedia's API for Wikipedia, then Keenable's
+  // fetcher, Jina Reader (both may refuse browser calls), and Gemini reading it as a last resort.
+  async function readForTab(url) {
+    const site = hostOf(url);
+    const tries = [];
+    const wiki = wikipediaArticle(url);
+    if (wiki) {
+      tries.push([
+        'Wikipedia',
+        async () => wikipediaToReader(await getJSON(wikipediaParseUrl(wiki), { timeout: 10000 }), wiki),
+      ]);
+    }
+    if (!keenableBlocked) {
+      tries.push([
+        'Keenable',
+        async () => {
+          const page = mapKeenableFetch(
+            await keenableCall({ path: '/v1/fetch', query: { url, max_chars: '40000' }, timeout: 15000 }),
+            url
+          );
+          return { url: page.url, title: page.title, site, markdown: cleanReaderMarkdown(page.text) };
+        },
+      ]);
+    }
+    tries.push([
+      'Jina Reader',
+      async () => {
+        const data = await getJSON(`https://r.jina.ai/${url}`, {
+          init: { headers: { Accept: 'application/json' } },
+          timeout: 20000,
+        });
+        const d = data?.data || {};
+        return { url: d.url || url, title: d.title || '', site, markdown: cleanReaderMarkdown(d.content || '') };
+      },
+    ]);
+    if (google.enabled() && !googleOff.gemini) {
+      tries.push(['Gemini', async () => ({ url, site, ...(await google.rewritePage(url)), rewritten: true })]);
+    }
+    const errors = [];
+    for (const [source, run] of tries) {
+      try {
+        const page = await run();
+        if (page && page.markdown && page.markdown.length > 150) {
+          return { ...page, title: page.title || site, source, notes: errors };
+        }
+        errors.push(`${source}: no readable text`);
+      } catch (err) {
+        errors.push(`${source}: ${err.message || 'failed'}`);
+      }
+    }
+    throw new ApiError(502, `Spark couldn't read this page (${errors.join('; ')}).`);
+  }
+
   const newsFor = (q) => cache.misc.wrap(`news:${q.toLowerCase()}`, () => searchNews(q), 5 * 60 * 1000);
 
   async function searchImages(q, page, provider) {
@@ -397,7 +449,6 @@ export function createBackend(cfg = {}) {
         provider: web.provider,
         next: web.next || null,
         weather: weather || null,
-        overview: llm.enabled() && !cursor && !weather && wantsOverview(q, web.results),
         elapsedMs: Math.round(performance.now() - started),
         notes: web.errors || [],
         googleSuggestions: web.googleSuggestions || null,
@@ -439,6 +490,31 @@ export function createBackend(cfg = {}) {
       return { query: q, ...out, enabled: true };
     },
 
+    async '/api/agent'({ messages, tabs, final }, { signal }) {
+      const clean = sanitizeAgentMessages(messages);
+      if (!clean) throw new ApiError(400, 'Invalid assistant conversation');
+      if (!llm.enabled()) throw new ApiError(503, "Spark AI isn't set up on this site (no AI key).");
+      const message = await llm.agentStep({
+        messages: [{ role: 'system', content: agentSystemPrompt(sanitizeTabList(tabs)) }, ...clean],
+        tools: final ? undefined : AGENT_TOOLS,
+        signal,
+      });
+      return { message };
+    },
+
+    async '/api/read'({ url }) {
+      let target;
+      try {
+        target = new URL(url);
+        if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error('bad scheme');
+      } catch {
+        throw new ApiError(400, 'Invalid URL');
+      }
+      const key = `read:${target.href}`;
+      const page = await cache.misc.wrap(key, () => readForTab(target.href));
+      return page;
+    },
+
     async '/api/related'({ q }) {
       q = cleanQuery(q);
       if (!llm.enabled() || !q) return { questions: [] };
@@ -465,44 +541,6 @@ export function createBackend(cfg = {}) {
   };
 
   const streams = {
-    async '/api/overview'({ q, kind, fresh }, { signal, onEvent }) {
-      q = cleanQuery(q);
-      if (!llm.enabled()) return notConfigured(onEvent);
-      kind = kind === 'news' ? 'news' : 'web';
-      const key = `ov:${kind}:${q.toLowerCase()}`;
-      const hit = fresh ? null : cache.ai.get(key);
-      if (hit) {
-        onEvent('sources', hit.sources);
-        onEvent('token', { t: hit.text });
-        return onEvent('done', { cached: true });
-      }
-      try {
-        onEvent('status', { stage: 'searching' });
-        let sources;
-        let messages;
-        if (kind === 'news') {
-          sources = newsSources((await newsFor(q)).results);
-          if (!sources.length) {
-            return onEvent('error', { code: 'no_sources', message: 'There are no recent headlines to brief you on.' });
-          }
-          messages = newsBriefMessages(q, sources);
-        } else {
-          const [web, knowledge] = await Promise.all([webFor(q), knowledgeFor(q)]);
-          onEvent('status', { stage: 'reading', count: Math.min(web.results.length, 6) });
-          sources = baseSources(web.results, { knowledge });
-          messages = overviewMessages(q, sources);
-        }
-        const shown = publicSources(sources);
-        onEvent('sources', shown);
-        onEvent('status', { stage: 'writing' });
-        const text = await pipe(messages, { kind: 'search', temperature: 0.25, maxTokens: 700 }, signal, onEvent);
-        if (text.trim()) cache.ai.set(key, { sources: shown, text });
-        onEvent('done', {});
-      } catch (err) {
-        failure(err, signal, onEvent);
-      }
-    },
-
     async '/api/chat'(body, { signal, onEvent }) {
       const history = sanitizeHistory(body?.messages);
       if (!validChat(history)) throw new ApiError(400, 'Missing question');

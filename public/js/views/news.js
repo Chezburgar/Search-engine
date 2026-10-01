@@ -1,8 +1,6 @@
 import { h, progress } from '../lib/dom.js';
 import { getJSON } from '../lib/api.js';
-import { settings } from '../lib/store.js';
 import { timeAgo } from '../lib/format.js';
-import { createOverview } from '../components/overview.js';
 import { faviconEl } from '../components/result.js';
 import { emptyState } from './all.js';
 
@@ -24,11 +22,10 @@ function newsItem(n) {
   );
 }
 
-export async function renderNews(root, { q, signal, ai }) {
+export async function renderNews(root, { q, signal }) {
   const list = h('div', { class: 'news-list' });
   const meta = h('p', { class: 'serp__meta' });
-  const briefing = h('div');
-  root.replaceChildren(h('div', { class: 'news-page' }, meta, briefing, list));
+  root.replaceChildren(h('div', { class: 'news-page' }, meta, list));
 
   for (let i = 0; i < 5; i++) {
     list.append(
@@ -42,18 +39,11 @@ export async function renderNews(root, { q, signal, ai }) {
     );
   }
 
-  if (ai.enabled && settings.get('overview') !== 'off') {
-    const brief = createOverview({ q, kind: 'news', manual: settings.get('overview') === 'manual' });
-    briefing.append(brief.el);
-    signal.addEventListener('abort', brief.abort);
-  }
-
   progress.start();
   try {
     const data = await getJSON('/api/news', { q }, { signal });
     progress.done();
     if (!data.results.length) {
-      briefing.remove();
       list.replaceChildren(emptyState({ title: `No recent news for “${q}”`, text: 'Try a broader topic.' }));
       return;
     }

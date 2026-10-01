@@ -350,5 +350,32 @@ Format: "**TL;DR:** one sentence", then 3–5 bullet points with the most useful
     return answerText(data);
   }
 
-  return { enabled, hasCse, cse, groundedSearch, readSearch, summarizeUrl };
+  // A reader view of a page in Gemini's words (its recitation filter blocks copying pages
+  // verbatim), for when nothing else can fetch the page from the browser.
+  async function rewritePage(url, { signal } = {}) {
+    const data = await generate(
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `Read ${url} and write a reader version of it in Markdown.
+Start with "# " and the page's title. Follow the page's own sections and order with "## " headings, and cover every section's key points, facts, names and numbers in your own words (short paragraphs and bullet lists). Skip navigation, ads, cookie notices and footers. Do not add anything the page doesn't say. Up to 900 words.`,
+              },
+            ],
+          },
+        ],
+        tools: [{ url_context: {} }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 3000 },
+      },
+      { signal, timeout: 45000 }
+    );
+    if (!urlRetrieved(data, url)) throw new GoogleError(502, 'Gemini couldn’t open the page');
+    const markdown = answerText(data);
+    const title = (markdown.match(/^#\s+(.+)$/m) || [])[1] || '';
+    return { title: title.trim(), markdown: markdown.replace(/^#\s+.+\n+/, '').trim() };
+  }
+
+  return { enabled, hasCse, cse, groundedSearch, readSearch, summarizeUrl, rewritePage };
 }

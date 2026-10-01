@@ -1,7 +1,7 @@
 import { h, icon, fill } from '../lib/dom.js';
 import { stream } from '../lib/api.js';
 import { renderInto } from '../lib/markdown.js';
-import { loadingBlock } from './overview.js';
+import { loadingBlock } from './ai-bits.js';
 
 // Streams an AI response into `el` (used by summaries and "People also ask").
 // Resolves with { text, sources } when finished.

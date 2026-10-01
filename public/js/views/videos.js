@@ -59,7 +59,7 @@ function openPlayer(videos, start) {
         { class: 'viewer__actions' },
         h(
           'a',
-          { class: 'btn btn--ghost btn--sm', href: v.url, target: '_blank', rel: 'noopener' },
+          { class: 'btn btn--ghost btn--sm', href: v.url, target: '_blank', rel: 'noopener', 'data-external': '' },
           'Open on YouTube',
           icon('external')
         )

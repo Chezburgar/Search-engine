@@ -19,6 +19,20 @@ export async function getJSON(path, params, { signal } = {}) {
   return data;
 }
 
+// POSTs JSON and returns the JSON reply.
+export async function postJSON(path, body, { signal } = {}) {
+  if (STATIC) return (await backend()).json(path, body || {}, signal);
+  const res = await fetch(new URL(path, location.origin), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body || {}),
+    signal,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status})`), { status: res.status });
+  return data;
+}
+
 // Reads a text/event-stream response and calls onEvent(name, data) per event.
 export async function stream(path, { params, body, signal, onEvent }) {
   if (STATIC) return (await backend()).stream(path, { params: params || {}, body, signal, onEvent });

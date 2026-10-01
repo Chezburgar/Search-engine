@@ -150,6 +150,57 @@ function pickAnswer(body) {
   return 'chat';
 }
 
+// The tab assistant: a scripted model that calls tools based on the request and the
+// results it has seen, then answers.
+export function agentReply(body) {
+  const msgs = body.messages;
+  const lastUserIndex = msgs.map((m) => m.role).lastIndexOf('user');
+  const request = textOf(msgs[lastUserIndex].content).toLowerCase();
+  const since = msgs.slice(lastUserIndex + 1);
+  const toolResults = since.filter((m) => m.role === 'tool').map((m) => JSON.parse(m.content));
+  const showing = (msgs[0].content.match(/^- (\S+) \(showing\)/m) || [])[1] || 'spark';
+  let n = 0;
+  const call = (name, args) => ({
+    id: `call_${name}_${since.length}_${n++}`,
+    type: 'function',
+    function: { name, arguments: JSON.stringify(args) },
+  });
+  const reply = (message) => json({ choices: [{ message: { role: 'assistant', content: null, ...message } }] });
+  if (!body.tools) return reply({ content: 'Final answer without tools.' });
+
+  if (/close all/.test(request)) {
+    if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
+    if (toolResults.length === 1) {
+      const ids = toolResults[0].tabs.filter((t) => t.id !== 'spark').map((t) => t.id);
+      return reply({ tool_calls: [call('close_tabs', { tab_ids: ids })] });
+    }
+    return reply({ content: `Closed ${toolResults[1].closed.length} tabs.` });
+  }
+  if (/open the top (\d)/.test(request)) {
+    const count = Number(request.match(/open the top (\d)/)[1]);
+    if (!toolResults.length) return reply({ tool_calls: [call('read_tab', { tab_id: 'spark' })] });
+    if (toolResults.length === 1) {
+      const results = toolResults[0].results || [];
+      return reply({
+        tool_calls: results.slice(0, count).map((r) => call('open_tab', { url: r.url, background: true })),
+      });
+    }
+    return reply({ content: `Opened ${toolResults.length - 1} results in new tabs.` });
+  }
+  if (/summari[sz]e/.test(request)) {
+    if (!toolResults.length) return reply({ tool_calls: [call('read_tab', { tab_id: showing })] });
+    const page = toolResults[0];
+    return reply({ content: `**${page.title}**: ${String(page.text || '').slice(0, 80)}` });
+  }
+  if (/find (.+)/.test(request)) {
+    if (!toolResults.length)
+      return reply({ tool_calls: [call('find_in_tab', { tab_id: showing, text: request.match(/find (.+)/)[1] })] });
+    return reply({ content: toolResults[0].found ? 'Found it and highlighted it.' : 'Not on this page.' });
+  }
+  if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
+  return reply({ content: `You have ${toolResults[0].tabs.length} tabs open.` });
+}
+
 function chatReply(body, { think = false } = {}) {
   const kind = pickAnswer(body);
   const lastUser = textOf([...body.messages].reverse().find((m) => m.role === 'user')?.content);
@@ -303,7 +354,9 @@ async function mockFetch(input, init = {}) {
       });
     }
     if (process.env.MOCK_XAI_FAIL) return json({ error: 'Incorrect API key provided' }, 401);
-    return chatReply(JSON.parse(init.body));
+    const body = JSON.parse(init.body);
+    if (body.tools || /You are Spark Assistant/.test(body.messages?.[0]?.content || '')) return agentReply(body);
+    return chatReply(body);
   }
   if (host === 'api.groq.com') {
     if (url.pathname.endsWith('/models')) {
@@ -319,6 +372,7 @@ async function mockFetch(input, init = {}) {
       });
     }
     const body = JSON.parse(init.body);
+    if (body.tools || /You are Spark Assistant/.test(body.messages?.[0]?.content || '')) return agentReply(body);
     if (body.model === 'groq/compound-mini') {
       const prompt = textOf(body.messages[0].content);
       if (/^Visit /.test(prompt)) {
@@ -395,16 +449,18 @@ async function mockFetch(input, init = {}) {
       };
       // A results page: links as on DuckDuckGo's lite page (redirects, a bare domain, an ad).
       // When the page didn't load, Gemini answers from memory anyway.
-      const text = /search results page/.test(prompt)
-        ? [
-            'Sponsored deal ::: https://duckduckgo.com/y.js?ad_domain=ads.example&u3=x ::: An ad.',
-            ...SITES.slice(0, 6).map(([title, link], i) =>
-              i === 1
-                ? `${title} ::: ${link.replace(/^https:\/\//, '')} ::: Gemini's summary of ${title}.`
-                : `${title} ::: //duckduckgo.com/l/?uddg=${encodeURIComponent(link)}&rut=abc${i} ::: Gemini's summary of ${title}.`
-            ),
-          ].join('\n')
-        : '**TL;DR:** Gemini read the page.\n- Point one';
+      const text = /reader version/.test(prompt)
+        ? `# Gemini's take on the page\n\n## Overview\n\nThis page explains how black holes form when massive stars collapse, and how astronomers find them through their pull on nearby stars and gas.\n\n## Key points\n\n- Stellar black holes come from collapsing stars.\n- Supermassive ones sit at the centers of galaxies.`
+        : /search results page/.test(prompt)
+          ? [
+              'Sponsored deal ::: https://duckduckgo.com/y.js?ad_domain=ads.example&u3=x ::: An ad.',
+              ...SITES.slice(0, 6).map(([title, link], i) =>
+                i === 1
+                  ? `${title} ::: ${link.replace(/^https:\/\//, '')} ::: Gemini's summary of ${title}.`
+                  : `${title} ::: //duckduckgo.com/l/?uddg=${encodeURIComponent(link)}&rut=abc${i} ::: Gemini's summary of ${title}.`
+              ),
+            ].join('\n')
+          : '**TL;DR:** Gemini read the page.\n- Point one';
       return json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP', urlContextMetadata }] });
     }
     // Free-tier keys have no Google Search grounding quota.
@@ -444,6 +500,18 @@ async function mockFetch(input, init = {}) {
           })),
       });
     }
+  }
+  if (host === 'r.jina.ai') {
+    const target = decodeURIComponent(url.pathname.slice(1)) + url.search;
+    if (/nojina/.test(target)) return json({ code: 451, message: 'blocked' }, 451);
+    return json({
+      code: 200,
+      data: {
+        title: 'Jina read this page',
+        url: target,
+        content: `Black holes explained\n=====================\n\n![Image 1: diagram](https://img.mock.test/1.svg)\n\nBlack holes form when massive stars collapse at the end of their lives, compressing their cores into an incredibly small space.\n\nHow they grow\n-------------\n\nThey grow by [merging](https://example.com/mergers) and by swallowing gas over billions of years.`,
+      },
+    });
   }
   if (host === 'studentvuelib.up.railway.app' && url.pathname === '/fulfillAxios') {
     const body = JSON.parse(init.body || '{}');
@@ -503,6 +571,15 @@ async function mockFetch(input, init = {}) {
   if (host.endsWith('wikipedia.org') && url.searchParams.get('action') === 'opensearch') {
     const q = url.searchParams.get('search');
     return json([q, ['Black hole', 'Black hole information paradox', 'Black Hole Sun', 'Black holes in fiction']]);
+  }
+  if (host.endsWith('wikipedia.org') && url.pathname === '/w/api.php' && url.searchParams.get('action') === 'parse') {
+    const page = url.searchParams.get('page');
+    return json({
+      parse: {
+        title: page,
+        text: `<div class="mw-parser-output"><p>A <b>${page}</b> is a region of spacetime where gravity is so strong that nothing can escape.<sup class="reference">[1]</sup></p><h2>Formation<span class="mw-editsection">[edit]</span></h2><p>Most form when massive <a href="/wiki/Star" title="Star">stars</a> collapse at the end of their lives.</p><table class="infobox"><tr><td>junk</td></tr></table><h2>References</h2><ol class="references"><li>ref</li></ol></div>`,
+      },
+    });
   }
   if (host.endsWith('wikipedia.org') && url.pathname === '/w/api.php') {
     return json({

@@ -4,7 +4,7 @@ import { MAX_ATTACH, pickImages, imageFiles, toDataUrls } from '../lib/images.js
 import { session } from '../lib/store.js';
 import { renderInto, toPlainText } from '../lib/markdown.js';
 import { favicon, siteName } from '../lib/format.js';
-import { loadingBlock } from '../components/overview.js';
+import { loadingBlock } from '../components/ai-bits.js';
 import { emptyState } from './all.js';
 import { searchUrl, STATIC } from '../lib/routes.js';
 

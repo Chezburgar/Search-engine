@@ -1,10 +1,8 @@
 import { h, icon, clear, progress } from '../lib/dom.js';
 import { getJSON, safe } from '../lib/api.js';
-import { settings } from '../lib/store.js';
 import { looksLikeMath } from '../lib/calc.js';
 import { STATIC } from '../lib/routes.js';
 import { createResult, resultSkeleton } from '../components/result.js';
-import { createOverview } from '../components/overview.js';
 import { createKnowledgePanel, createPeopleAlsoAsk, createRelatedSearches } from '../components/panels.js';
 import { createWeatherCard, createCalculator } from '../components/widgets.js';
 
@@ -53,7 +51,7 @@ export function emptyState({ title, text, actions = [] }) {
 export async function renderAll(root, { q, signal, go, ai, openChat }) {
   const meta = h('p', { class: 'serp__meta' });
   const instant = h('div', { class: 'serp__instant' });
-  const overviewSlot = h('div');
+  const noticeSlot = h('div');
   const kpInline = h('div', { class: 'kp-inline' });
   const list = h('div', { class: 'results' }, resultSkeleton());
   const after = h('div', { class: 'serp__after' });
@@ -62,7 +60,7 @@ export async function renderAll(root, { q, signal, go, ai, openChat }) {
     h(
       'div',
       { class: 'serp' },
-      h('div', { class: 'serp__main' }, meta, instant, overviewSlot, kpInline, list, after),
+      h('div', { class: 'serp__main' }, meta, instant, noticeSlot, kpInline, list, after),
       side
     )
   );
@@ -112,18 +110,8 @@ export async function renderAll(root, { q, signal, go, ai, openChat }) {
 
   if (data.weather) instant.append(createWeatherCard(data.weather));
 
-  const mode = settings.get('overview');
-  if (ai.enabled && data.overview && mode !== 'off') {
-    const overview = createOverview({
-      q,
-      manual: mode === 'manual',
-      onFollowUp: (question, context) =>
-        openChat(q, { seed: { q, text: context.text, sources: context.sources }, ask: question }),
-    });
-    overviewSlot.append(overview.el);
-    signal.addEventListener('abort', overview.abort);
-  } else if (!ai.enabled && data.results.length) {
-    overviewSlot.append(
+  if (!ai.enabled && data.results.length) {
+    noticeSlot.append(
       h(
         'div',
         { class: 'ai-setup' },
@@ -133,13 +121,13 @@ export async function renderAll(root, { q, signal, go, ai, openChat }) {
           {},
           h('b', {}, 'Spark AI is off. '),
           STATIC
-            ? "This site was published without an xAI key, so AI overviews, chat and summaries aren't available."
+            ? "This site was published without an AI key, so chat, summaries and the tab assistant aren't available."
             : [
-                'Add your xAI key as ',
-                h('code', {}, 'XAI_API_KEY'),
+                'Add a Groq key as ',
+                h('code', {}, 'GROQ_API_KEY'),
                 ' in ',
                 h('code', {}, '.env'),
-                ' to get AI overviews, chat and summaries.',
+                ' to turn on chat, summaries and the tab assistant.',
               ]
         )
       )

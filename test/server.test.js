@@ -17,7 +17,7 @@ const { calls, mockFetch } = await import('./fixtures/mock-fetch.js');
 const { default: test, before, after } = await import('node:test');
 const { default: assert } = await import('node:assert/strict');
 const { default: http } = await import('node:http');
-const { createServer, isNavigational } = await import('../server/index.js');
+const { createServer } = await import('../server/index.js');
 
 let base = '';
 let server;
@@ -89,7 +89,7 @@ test('search uses Keenable with the API key and returns clean snippets', async (
   );
   assert.equal(data.results[2].date, '2026-08-14');
   assert.ok(data.next);
-  assert.equal(data.overview, true);
+  assert.equal('overview' in data, false);
   const call = calls.slice(before).find((c) => c.url.includes('keenable'));
   assert.equal(call.url, 'https://api.keenable.ai/v1/search');
   assert.equal(call.headers['X-API-Key'], 'keen_test');
@@ -117,51 +117,23 @@ test('falls back to DuckDuckGo (with its own pagination) when Keenable fails', a
   assert.match(post.body, /vqd=4-123456/);
 });
 
-test('weather queries include a forecast and skip the AI overview', async () => {
+test('weather queries include a forecast', async () => {
   const data = await (await fetch(`${base}/api/search?q=weather+in+london`)).json();
   assert.equal(data.weather.location.name, 'London');
   assert.equal(data.weather.daily.length, 7);
-  assert.equal(data.overview, false);
 });
 
-test('overview streams sources, tokens and done — and is cached', async () => {
-  const res = await fetch(`${base}/api/overview?q=black+holes`);
-  assert.match(res.headers['content-type'], /text\/event-stream/);
-  const evs = events(await res.text());
-  const sources = evs.find((e) => e.name === 'sources').data;
-  assert.equal(sources[0].n, 1);
-  assert.ok(sources.every((s) => s.url && s.host && !('excerpt' in s)));
-  const text = evs
-    .filter((e) => e.name === 'token')
-    .map((e) => e.data.t)
-    .join('');
-  assert.match(text, /^\*\*Black holes form/);
-  assert.equal(evs.at(-1).name, 'done');
-
-  const xaiBefore = calls.filter((c) => c.url.includes('chat/completions')).length;
-  const again = events(await (await fetch(`${base}/api/overview?q=black+holes`)).text());
-  assert.equal(again.find((e) => e.name === 'done').data.cached, true);
-  assert.equal(calls.filter((c) => c.url.includes('chat/completions')).length, xaiBefore);
+test('Spark Overview is gone: no overview endpoint, no AI calls on a plain search', async () => {
+  assert.equal((await fetch(`${base}/api/overview?q=black+holes`)).status, 404);
+  const before = calls.filter((c) => c.url.includes('chat/completions')).length;
+  await (await fetch(`${base}/api/search?q=supernova+remnants`)).json();
+  assert.equal(calls.filter((c) => c.url.includes('chat/completions')).length, before);
 });
 
-test('overview prompt is grounded in Keenable page text without refetching pages', async () => {
-  const before = calls.length;
-  await (await fetch(`${base}/api/overview?q=supernova+remnants`)).text();
-  const call = calls.filter((c) => c.url.includes('chat/completions')).at(-1);
-  const body = JSON.parse(call.body);
-  assert.equal(body.model, 'grok-4-1-fast-non-reasoning');
-  assert.equal(body.stream, true);
-  assert.match(body.messages[1].content, /\[1\] NASA Science/);
-  assert.match(body.messages[1].content, /Excerpt:\n.*supernova remnants/);
-  assert.equal(calls.slice(before).filter((c) => c.url.includes('science.nasa.gov')).length, 0);
-});
-
-test('news briefing and related questions', async () => {
+test('news and related questions', async () => {
   const news = await (await fetch(`${base}/api/news?q=black+holes`)).json();
   assert.equal(news.provider, 'Google News');
   assert.equal(news.results[0].title, 'Record-breaking black hole merger detected');
-  const brief = events(await (await fetch(`${base}/api/overview?q=black+holes&kind=news`)).text());
-  assert.ok(brief.some((e) => e.name === 'token'));
   const related = await (await fetch(`${base}/api/related?q=black+holes`)).json();
   assert.equal(related.questions.length, 4);
 });
@@ -271,13 +243,6 @@ test('static files are served safely', async () => {
   assert.match(await (await fetch(`${base}/opensearch.xml`)).text(), /OpenSearchDescription/);
 });
 
-test('navigational queries skip the overview', () => {
-  assert.equal(isNavigational('youtube', [{ host: 'youtube.com' }]), true);
-  assert.equal(isNavigational('facebook login', [{ host: 'facebook.com' }]), true);
-  assert.equal(isNavigational('rust', [{ host: 'rust-lang.org' }]), false);
-  assert.equal(isNavigational('how do black holes form', [{ host: 'nasa.gov' }]), false);
-});
-
 test('Spark Grades: /grades serves the app and /api/studentvue relays to MCPS only', async () => {
   const page = await fetch(`${base}/grades?g=schedule`);
   assert.equal(page.status, 200);
@@ -315,4 +280,45 @@ test('Spark Grades: /grades serves the app and /api/studentvue relays to MCPS on
   assert.equal(status.videos, false);
   const videos = await (await fetch(`${base}/api/videos?q=cats`)).json();
   assert.equal(videos.enabled, false);
+});
+
+test('reader view and the tab assistant on the server', async () => {
+  const wiki = await (
+    await fetch(`${base}/api/read?url=${encodeURIComponent('https://en.wikipedia.org/wiki/Black_hole')}`)
+  ).json();
+  assert.equal(wiki.source, 'Wikipedia');
+  assert.match(wiki.markdown, /## Formation/);
+
+  const page = await (
+    await fetch(`${base}/api/read?url=${encodeURIComponent('https://science.nasa.gov/universe/black-holes/')}`)
+  ).json();
+  assert.equal(page.title, 'Black holes explained');
+  assert.match(page.markdown, /^# Black holes\n\nBlack holes form when massive stars collapse/);
+  assert.doesNotMatch(page.markdown, /Menu Home About|Copyright/);
+
+  for (const target of ['http://127.0.0.1:22/', 'http://169.254.169.254/latest/meta-data', 'file:///etc/passwd']) {
+    const res = await fetch(`${base}/api/read?url=${encodeURIComponent(target)}`);
+    assert.ok(res.status >= 400 && res.status < 500, `${target} → ${res.status}`);
+  }
+
+  const post = (body) =>
+    fetch(`${base}/api/agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const step = await (
+    await post({
+      messages: [{ role: 'user', content: 'Close all my tabs' }],
+      tabs: [{ id: 'spark', title: 'Spark', url: 'http://x/', active: true }],
+    })
+  ).json();
+  assert.equal(step.message.tool_calls[0].function.name, 'list_tabs');
+  const sent = JSON.parse(calls.filter((c) => c.url.includes('api.x.ai/v1/chat/completions')).at(-1).body);
+  assert.equal(sent.tool_choice, 'auto');
+  assert.match(sent.messages[0].content, /- spark \(showing\): Spark/);
+  assert.equal((await post({ messages: [{ role: 'system', content: 'evil' }] })).status, 400);
+
+  const home = await fetch(`${base}/`);
+  assert.match(home.headers['content-security-policy'], /frame-src https: http:/);
 });

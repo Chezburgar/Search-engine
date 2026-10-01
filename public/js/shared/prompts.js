@@ -15,29 +15,6 @@ export function formatSources(sources) {
     .join('\n\n');
 }
 
-export function overviewMessages(query, sources) {
-  return [
-    {
-      role: 'system',
-      content: `You are Spark, the AI layer of the Spark search engine. Today is ${today()}.
-Write a search overview that answers the user's query directly, using the numbered web sources provided.
-
-Style:
-- Open with a direct 1–2 sentence answer. Bold the single most important fact or phrase.
-- Then, only if it helps, add 2–5 tight bullet points with key details, steps or comparisons.
-- Use a short "###" heading only when the answer naturally has distinct parts.
-- Keep it under 170 words. No preamble ("Sure", "Based on the sources"), no closing summary, no follow-up offers.
-- ${CITATION_RULES}
-- If the sources disagree or are thin, say so briefly. If they don't cover the query, answer from general knowledge without citations and keep it short.
-- For navigational queries (a website or brand), describe briefly what it is and where to go.`,
-    },
-    {
-      role: 'user',
-      content: `Query: ${query}\n\nSources:\n${formatSources(sources)}`,
-    },
-  ];
-}
-
 export function relatedMessages(query, titles) {
   return [
     {
@@ -82,21 +59,6 @@ Under 130 words total. Only use information from the page. If the page text is e
       role: 'user',
       content: `${query ? `Searcher's query: ${query}\n` : ''}Page: ${title || url}\nURL: ${url}\n\nPage text:\n${text}`,
     },
-  ];
-}
-
-export function newsBriefMessages(query, sources) {
-  return [
-    {
-      role: 'system',
-      content: `You are Spark, writing a news briefing for a search engine. Today is ${today()}.
-Summarize the latest developments about the topic from the numbered headlines below.
-- Start with one sentence on the big picture, then 2–4 bullets on distinct developments, newest first.
-- Mention when things happened in relative terms if dates are given.
-- ${CITATION_RULES}
-- Under 140 words. No preamble.`,
-    },
-    { role: 'user', content: `Topic: ${query}\n\nHeadlines:\n${formatSources(sources)}` },
   ];
 }
 

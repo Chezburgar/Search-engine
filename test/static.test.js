@@ -59,12 +59,13 @@ test('when the browser blocks Keenable, search, news and summaries fall back to 
   }
 });
 
-test('static overview is grounded in sources and streams a cleaned answer', async () => {
+test('static build has no overview endpoint and a search makes no AI calls', async () => {
   const backend = createBackend({ mode: 'static', aiKey: 'gsk_test', keenableKey: 'keen_test' });
-  const events = await collect(backend, '/api/overview', { params: { q: 'how do black holes form' } });
-  assert.ok(events.find((e) => e.name === 'sources').data.length >= 6);
-  assert.match(textOf(events), /^\*\*Black holes form/);
-  assert.equal(events.at(-1).name, 'done');
+  await assert.rejects(collect(backend, '/api/overview', { params: { q: 'x' } }), /Not found/);
+  const before = calls.filter((c) => c.url.includes('chat/completions')).length;
+  const data = await backend.json('/api/search', { q: 'how do black holes form' });
+  assert.equal('overview' in data, false);
+  assert.equal(calls.filter((c) => c.url.includes('chat/completions')).length, before);
 });
 
 test('static chat answers questions about an attached image without a web search', async () => {
@@ -86,6 +87,6 @@ test('static chat answers questions about an attached image without a web search
 test('static site without an AI key reports AI off', async () => {
   const backend = createBackend({ mode: 'static' });
   assert.equal((await backend.json('/api/status')).ai.enabled, false);
-  const events = await collect(backend, '/api/overview', { params: { q: 'x' } });
+  const events = await collect(backend, '/api/chat', { body: { messages: [{ role: 'user', content: 'x' }] } });
   assert.equal(events[0].data.code, 'not_configured');
 });

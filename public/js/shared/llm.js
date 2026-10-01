@@ -299,7 +299,7 @@ export function createLLM({
     }
   }
 
-  async function open({ messages, kind, temperature, maxTokens, stream, signal }) {
+  async function open({ messages, kind, temperature, maxTokens, stream, signal, tools }) {
     if (!enabled()) throw new LLMError(503, `Spark AI is not configured. Add ${keyHint}.`);
     if (hasImages(messages)) kind = 'vision';
     const pinned = kind === 'vision' ? visionModel : (kind === 'chat' && chatModel) || model;
@@ -312,6 +312,7 @@ export function createLLM({
         temperature,
         max_tokens: p.isReasoning(current) ? maxTokens + 800 : maxTokens,
         stream,
+        ...(tools?.length ? { tools, tool_choice: 'auto' } : {}),
         ...extras,
       };
       const res = await post(body, signal);
@@ -353,6 +354,35 @@ export function createLLM({
     const { res } = await open({ messages, kind, temperature, maxTokens, stream: false, signal });
     const data = await res.json();
     return (data.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  }
+
+  // One step of the tab assistant: the model's next message, which may call tools.
+  async function agentStep({ messages, tools, signal, maxTokens = 1200 }) {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { res } = await open({
+          messages,
+          kind: 'chat',
+          temperature: attempt ? 0 : 0.2,
+          maxTokens,
+          stream: false,
+          signal,
+          tools,
+        });
+        const data = await res.json();
+        const m = data.choices?.[0]?.message || {};
+        return {
+          content: (m.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
+          tool_calls: Array.isArray(m.tool_calls) ? m.tool_calls : [],
+        };
+      } catch (err) {
+        lastError = err;
+        // Models sometimes write a malformed tool call; one retry usually fixes it.
+        if (!(err instanceof LLMError) || err.status !== 400 || !/tool|function/i.test(err.message)) throw err;
+      }
+    }
+    throw lastError;
   }
 
   // Web search through the provider's built-in search tool (Groq Compound), if it has one.
@@ -404,5 +434,5 @@ export function createLLM({
     };
   }
 
-  return { enabled, provider: p, resolveModel, streamChat, complete, webSearch, askWithTools, status };
+  return { enabled, provider: p, resolveModel, streamChat, complete, agentStep, webSearch, askWithTools, status };
 }
