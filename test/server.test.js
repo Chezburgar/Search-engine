@@ -282,7 +282,7 @@ test('Spark Grades: /grades serves the app and /api/studentvue relays to MCPS on
   assert.equal(videos.enabled, false);
 });
 
-test('reader view and the tab assistant on the server', async () => {
+test('page text and the tab assistant on the server', async () => {
   const wiki = await (
     await fetch(`${base}/api/read?url=${encodeURIComponent('https://en.wikipedia.org/wiki/Black_hole')}`)
   ).json();

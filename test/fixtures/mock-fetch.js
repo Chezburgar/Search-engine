@@ -192,11 +192,6 @@ export function agentReply(body) {
     const page = toolResults[0];
     return reply({ content: `**${page.title}**: ${String(page.text || '').slice(0, 80)}` });
   }
-  if (/find (.+)/.test(request)) {
-    if (!toolResults.length)
-      return reply({ tool_calls: [call('find_in_tab', { tab_id: showing, text: request.match(/find (.+)/)[1] })] });
-    return reply({ content: toolResults[0].found ? 'Found it and highlighted it.' : 'Not on this page.' });
-  }
   if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
   return reply({ content: `You have ${toolResults[0].tabs.length} tabs open.` });
 }

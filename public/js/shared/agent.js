@@ -15,7 +15,7 @@ export const AGENT_TOOLS = [
   fn('list_tabs', 'List the open Spark tabs: id, title, URL, and which one is showing.'),
   fn(
     'read_tab',
-    'Read the text of a tab. For a page tab this is the page’s reader view; for "spark" it is the current Spark page (search results, AI chat, etc.).',
+    'Read the text of a tab. For a page tab this is the page’s text; for "spark" it is the current Spark page (search results, AI chat, etc.).',
     { tab_id: tabId },
     ['tab_id']
   ),
@@ -38,18 +38,6 @@ export const AGENT_TOOLS = [
     'Close page tabs. Only when the user asks.',
     { tab_ids: { type: 'array', items: { type: 'string' } } },
     ['tab_ids']
-  ),
-  fn(
-    'find_in_tab',
-    'Show a tab and scroll to and highlight the first place a word or phrase appears.',
-    { tab_id: tabId, text: { type: 'string', description: 'Exact words to find (short).' } },
-    ['tab_id', 'text']
-  ),
-  fn(
-    'set_tab_view',
-    'Show a page tab as "reader" (clean text) or "live" (the real site, if it allows being embedded).',
-    { tab_id: tabId, view: { type: 'string', enum: ['reader', 'live'] } },
-    ['tab_id', 'view']
   ),
   fn(
     'search_web',
@@ -82,7 +70,7 @@ export function agentSystemPrompt(tabs = []) {
         .join('\n')
     : '- spark (showing): Spark';
   return `You are Spark Assistant, built into the Spark search engine. Today is ${today()}.
-You help the user with their Spark tabs: reading, summarizing and comparing pages, finding things in them, opening, switching and closing tabs, and searching the web. Spark tabs are pages opened inside Spark (not the browser's own tabs). You act only through your tools.
+You help the user with their Spark tabs: reading, summarizing and comparing pages, finding things in them (read the tab and quote the passage), opening, switching and closing tabs, and searching the web. Spark tabs are pages opened inside Spark (not the browser's own tabs). You act only through your tools.
 
 Rules:
 - Read a tab before answering about what it says; never guess a page's contents.

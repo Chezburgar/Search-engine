@@ -71,10 +71,6 @@ function describe(action) {
       return `Switched to “${clip(titleOf(args.tab_id), 48)}”`;
     case 'close_tabs':
       return `Closed ${result?.closed?.length ?? (args.tab_ids || []).length} tab${(result?.closed?.length ?? 0) === 1 ? '' : 's'}`;
-    case 'find_in_tab':
-      return result?.found ? `Found “${clip(args.text, 40)}”` : `Looked for “${clip(args.text, 40)}”`;
-    case 'set_tab_view':
-      return `Switched to ${args.view === 'live' ? 'the live page' : 'Reader view'}`;
     case 'search_web':
       return `Searched “${clip(args.query, 48)}”`;
     case 'show_search':
@@ -91,8 +87,6 @@ const ACTION_ICONS = {
   navigate_tab: 'arrowRight',
   switch_tab: 'arrowRight',
   close_tabs: 'x',
-  find_in_tab: 'search',
-  set_tab_view: 'globe',
   search_web: 'search',
   show_search: 'search',
 };
@@ -135,14 +129,6 @@ export function createAssistant({ go }) {
       const closed = ids.filter((id) => id !== 'spark' && tabs.close(id));
       return { closed, notFound: ids.filter((id) => !closed.includes(id)) };
     },
-    async find_in_tab({ tab_id, text }) {
-      const context = await tabs.find(tab_id, text);
-      return context ? { found: true, context } : { found: false };
-    },
-    set_tab_view({ tab_id, view }) {
-      if (!tabs.setMode(tab_id, view)) throw new Error(`Couldn't change ${tab_id}.`);
-      return { ok: true };
-    },
     async search_web({ query }) {
       const data = await getJSON('/api/search', { q: query });
       return {
@@ -151,7 +137,7 @@ export function createAssistant({ go }) {
       };
     },
     show_search({ query, type }) {
-      tabs.activate('spark');
+      tabs.activate('spark', { history: false });
       go(query, ['news', 'images', 'videos'].includes(type) ? type : 'all');
       return { showing: `Spark results for “${query}”` };
     },

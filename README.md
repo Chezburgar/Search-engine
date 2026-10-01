@@ -39,8 +39,8 @@
 
 **Spark tabs and the tab assistant**
 
-- Links open in **Spark tabs** instead of new browser tabs: a tab strip at the top, with back/forward, an address box, and **Reader** (the page's text, cleanly laid out) or **Live** (the real site in a frame, for sites that allow it) views. Ctrl/⌘-click still opens a browser tab
-- The **Assistant** (✦ button) reads and controls your Spark tabs on request: "summarize this tab", "compare my open tabs", "open the top 3 results", "find the pricing section", "close all my tabs". It uses AI tool calling; every action it takes is listed under its answer
+- Links open in **Spark tabs** instead of new browser tabs: a tab strip at the top, with back/forward, reload, and an address box, showing the real site in a frame. Switching tabs keeps each page as you left it. Ctrl/⌘-click still opens a browser tab
+- The **Assistant** (✦ button) reads and controls your Spark tabs on request: "summarize this tab", "compare my open tabs", "open the top 3 results", "where does this page mention pricing?", "close all my tabs". It uses AI tool calling; every action it takes is listed under its answer
 
 **Polish**
 
@@ -93,7 +93,7 @@ Browser (vanilla JS, no build step)
   ├── /api/chat, /api/summarize   (Server-Sent Events)
   │       └─ search → fetch and trim top pages → numbered sources → AI (streamed)
   │
-  ├── /api/read     a page as reader-view Markdown, for Spark tabs and the assistant
+  ├── /api/read     a page's text as Markdown, for the tab assistant
   └── /api/agent    one step of the tab assistant (the model's next message or tool calls)
 ```
 
@@ -105,18 +105,22 @@ Browser (vanilla JS, no build step)
 
 Clicking any web link inside Spark opens it in a Spark tab (tabs last for the browser session).
 
-- **Reader view** (default) shows the page's text from `/api/read`. On the Node server, Spark fetches
-  the page itself (with the same SSRF protection as summaries) and converts its HTML to Markdown;
-  Wikipedia articles come from Wikipedia's API. On GitHub Pages the browser can't fetch most sites,
-  so it tries Wikipedia's API, then Keenable's fetcher, then [Jina Reader](https://jina.ai/reader)
-  (`r.jina.ai`, which receives the address of the page you open), and finally Gemini, whose version
-  is a rewrite in its own words and is labelled as such.
-- **Live view** shows the real site in a frame. Many sites refuse to be framed; Spark remembers which
-  sites you switched to Live.
+- **Tabs show the real site** in a frame, one frame per tab, created the first time a tab is shown.
+  Many sites refuse to be shown inside other sites; those show a blank or "refused to connect" frame,
+  and the bar above each page links to opening it in your browser instead. Back/forward follow the
+  pages opened from the address box or by the assistant (links clicked inside a site stay in its
+  frame).
+- **Page text for the assistant** comes from `/api/read`, because a page from another site can't be
+  read from inside its frame. On the Node server, Spark fetches the page itself (with the same SSRF
+  protection as summaries) and converts its HTML to Markdown; Wikipedia articles come from
+  Wikipedia's API. On GitHub Pages the browser can't fetch most sites, so it tries Wikipedia's API,
+  then Keenable's fetcher, then [Jina Reader](https://jina.ai/reader) (`r.jina.ai`, which receives
+  the address of the page being read), and finally Gemini, whose version is a rewrite in its own
+  words and is marked as such to the assistant. Pages are only read when the assistant asks.
 - **The assistant** runs its loop in your browser, where the tabs are. Each step goes to `/api/agent`,
   which asks the AI (Groq or Grok tool calling) for its next move; the browser then runs the tools:
-  `list_tabs`, `read_tab`, `open_tab`, `navigate_tab`, `switch_tab`, `close_tabs`, `find_in_tab`,
-  `set_tab_view`, `search_web` and `show_search`. It controls Spark tabs only, not your browser's own
+  `list_tabs`, `read_tab`, `open_tab`, `navigate_tab`, `switch_tab`, `close_tabs`, `search_web`
+  and `show_search`. It controls Spark tabs only, not your browser's own
   tabs (a web page can't; that would need a browser extension). Page text is passed to the model as
   data, and the model is told never to follow instructions found in pages.
 
@@ -169,7 +173,7 @@ public/
   js/views/           home, all results, Spark AI, images, news, videos, grades
   js/grades/          Spark Grades: StudentVUE client (MCPS), XML parser, grade math, demo data
   js/components/      search box, results, panels, widgets, AI answer bits
-  js/tabs/            Spark tabs (strip, reader/live viewer) and the tab assistant
+  js/tabs/            Spark tabs (strip and page frames) and the tab assistant
   js/lib/             DOM helpers, API/SSE client, routes, Markdown, calculator
   js/shared/          logic shared by the server and the static build (prompts, Grok client, parsers)
   js/static/          in-browser backend used by the GitHub Pages build

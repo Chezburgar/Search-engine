@@ -1,4 +1,4 @@
-// Spark tabs (reader view) and the tab assistant, with every API mocked.
+// Page text for the tab assistant, and the assistant itself, with every API mocked.
 process.env.MOCK_DELAY = '0';
 const { mockFetch, calls } = await import('./fixtures/mock-fetch.js');
 const { default: test } = await import('node:test');
@@ -16,7 +16,7 @@ globalThis.fetch = (input, init) =>
 
 /* -------------------------------- reader --------------------------------- */
 
-test('reader view keeps headings, lists, links and code, and drops page chrome', () => {
+test('page text keeps headings, lists, links and code, and drops page chrome', () => {
   const html = `<html><head><title>Ignored head</title><meta property="og:title" content="Black holes"><meta property="og:site_name" content="Space Mag"></head>
   <body><nav>Home · About</nav><header>Logo</header><article><h1>Black holes</h1>
   <p>They form when <a href="/stars">massive stars</a> collapse. See <a href="https://en.wikipedia.org/wiki/Rust_(programming_language)">Rust</a> &amp; more.<sup class="reference">[1]</sup></p>
