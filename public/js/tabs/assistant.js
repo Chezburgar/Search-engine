@@ -9,6 +9,7 @@ import { runAgent } from '../shared/agent.js';
 import { markdownToText } from '../shared/reader.js';
 import { tabs, isWebUrl } from './tabs.js';
 import { connectExtension, extCall } from './extension.js';
+import { openedTabs } from './opened.js';
 import { STATIC } from '../lib/routes.js';
 
 const KEY = 'spark:assistant';
@@ -16,9 +17,11 @@ const MODE_KEY = 'spark:assistant-mode';
 const SUGGESTIONS = {
   spark: ['Summarize this tab', 'Compare my open tabs', 'Open the top 3 results in tabs', 'Close all my tabs'],
   browser: ['Summarize this tab', 'Compare my open tabs', 'Group my tabs by topic', 'Close duplicate tabs'],
+  opened: ['Open the top 3 results in tabs', 'Summarize the newest tab you opened', 'Compare the tabs you opened'],
 };
 const MODES = {
   spark: { label: 'Spark tabs', subtitle: 'Reads and controls your Spark tabs' },
+  opened: { label: 'Browser tabs', subtitle: 'Opens and reads real browser tabs' },
   browser: { label: 'Chrome tabs', subtitle: 'Reads and controls your Chrome tabs' },
 };
 
@@ -55,7 +58,11 @@ function sparkPage() {
 
 // Chrome tab titles seen in the last list_tabs, for describing actions.
 const chromeTitles = new Map();
-const titleOf = (id) => chromeTitles.get(Number(id)) || tabs.list().find((t) => t.id === id)?.title || String(id);
+const titleOf = (id) =>
+  chromeTitles.get(Number(id)) ||
+  openedTabs.list().find((t) => t.id === id)?.title ||
+  tabs.list().find((t) => t.id === id)?.title ||
+  String(id);
 
 function describe(action) {
   const { name, args, result } = action;
@@ -70,9 +77,9 @@ function describe(action) {
     case 'list_tabs':
       return 'Looked at your tabs';
     case 'read_tab':
-      return `Read “${clip(result?.title || titleOf(args.tab_id), 48)}”`;
+      return `${action.status === 'error' ? 'Couldn’t read' : 'Read'} “${clip(result?.title || titleOf(args.tab_id), 48)}”`;
     case 'open_tab':
-      return `Opened ${host(args.url)}`;
+      return action.status === 'error' ? `Couldn’t open ${host(args.url)}` : `Opened ${host(args.url)}`;
     case 'navigate_tab':
       return `Went to ${host(args.url)}`;
     case 'switch_tab':
@@ -190,10 +197,40 @@ export function createAssistant({ go, embedded = false }) {
     group_tabs: via('group_tabs'),
     search_web: sparkTools.search_web,
   };
-  const tools = () => (mode === 'browser' ? browserTools : sparkTools);
+  // Real browser tabs Spark opened (no extension): handles, not visibility.
+  const sparkEntry = () => ({ id: 'spark', title: 'Spark (this page)', url: location.href, self: true });
+  const openedTools = {
+    list_tabs: () => ({ tabs: [sparkEntry(), ...openedTabs.list()] }),
+    async read_tab({ tab_id }) {
+      if (!tab_id || tab_id === 'spark') return sparkPage();
+      const tab = openedTabs.get(tab_id);
+      const page = await getJSON('/api/read', { url: tab.url });
+      if (page.title && !page.rewritten) openedTabs.setTitle(tab_id, page.title);
+      const text = markdownToText(page.markdown);
+      return {
+        id: tab_id,
+        title: page.title || tab.title,
+        url: tab.url,
+        note: page.rewritten
+          ? 'Gemini rewrite of the page at this address, not its original text'
+          : 'The page at the address Spark opened (not what the user may have clicked to since)',
+        text: clip(text, 10000),
+        truncated: text.length > 10000 || undefined,
+      };
+    },
+    open_tab({ url }) {
+      const id = openedTabs.open(url);
+      return { opened: id, url };
+    },
+    search_web: sparkTools.search_web,
+    show_search: sparkTools.show_search,
+  };
+
+  const tools = () => ({ spark: sparkTools, browser: browserTools, opened: openedTools })[mode];
 
   // The tabs listed in the AI's instructions for each step.
   async function tabsNow() {
+    if (mode === 'opened') return openedTools.list_tabs().tabs;
     if (mode !== 'browser') return tabs.list();
     try {
       return (await browserTools.list_tabs()).tabs.slice(0, 60);
@@ -260,17 +297,19 @@ export function createAssistant({ go, embedded = false }) {
     icon('x')
   );
   const subtitle = h('p', {}, MODES.spark.subtitle);
-  const modeSwitch = h(
-    'div',
-    { class: 'seg assist__modes', role: 'group', 'aria-label': 'Which tabs', hidden: true },
-    Object.entries(MODES).map(([id, m]) =>
-      h(
-        'button',
-        { type: 'button', dataset: { mode: id }, on: { click: () => setMode(id, { remember: true }) } },
-        m.label
+  const modeSwitch = h('div', { class: 'seg assist__modes', role: 'group', 'aria-label': 'Which tabs', hidden: true });
+  // Spark tabs, plus Chrome tabs with the extension or browser tabs Spark opens without it.
+  const showModes = () =>
+    fill(
+      modeSwitch,
+      ['spark', extension ? 'browser' : 'opened'].map((id) =>
+        h(
+          'button',
+          { type: 'button', dataset: { mode: id }, on: { click: () => setMode(id, { remember: true }) } },
+          MODES[id].label
+        )
       )
-    )
-  );
+    );
   const panel = h(
     'aside',
     { class: `assist${embedded ? ' assist--embedded' : ''}`, 'aria-label': 'Spark Assistant', hidden: true },
@@ -288,7 +327,10 @@ export function createAssistant({ go, embedded = false }) {
   );
 
   function setMode(next, { remember = false } = {}) {
-    if (next === 'browser' && !extension) next = 'spark';
+    // With the extension, "browser tabs Spark opens" is covered by full Chrome-tab control.
+    if (next === 'browser' && !extension) next = 'opened';
+    if (next === 'opened' && extension) next = 'browser';
+    if (!MODES[next]) next = 'spark';
     if (next !== mode) {
       mode = next;
       // The AI's memory of the other kind of tabs would only confuse it.
@@ -352,9 +394,18 @@ export function createAssistant({ go, embedded = false }) {
             {},
             mode === 'browser'
               ? 'I can read, summarize and compare your Chrome tabs, find things in them, open pages, and switch, group or close tabs.'
-              : 'I can read, summarize and compare your Spark tabs, find things in them, open search results, and switch or close tabs.'
+              : mode === 'opened'
+                ? 'I can open pages in real browser tabs and read the pages I opened. Without the Chrome extension I can’t see your other tabs, or switch to or close tabs — your browser keeps that private.'
+                : 'I can read, summarize and compare your Spark tabs, find things in them, open search results, and switch or close tabs.'
           ),
-          !extension && !embedded
+          mode === 'opened'
+            ? h(
+                'p',
+                { class: 'assist__hint' },
+                'Tip: allow pop-ups for Spark (pop-up icon at the right of the address bar → “Always allow”), or your browser may block the tabs I open.'
+              )
+            : null,
+          !extension && !embedded && mode === 'spark'
             ? h(
                 'p',
                 { class: 'assist__hint' },
@@ -466,17 +517,34 @@ export function createAssistant({ go, embedded = false }) {
     if (e.key === 'Escape' && !panel.hidden && panel.contains(document.activeElement)) toggle(false);
   });
 
+  // In "browser tabs" mode, links in answers open as tabs the assistant can then work with
+  // (a click lets the browser open them without asking).
+  list.addEventListener(
+    'click',
+    (e) => {
+      const a = e.target.closest('a[href]');
+      if (mode !== 'opened' || !a || !isWebUrl(a.href) || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        openedTabs.open(a.href, { title: a.textContent });
+      } catch {}
+    },
+    true
+  );
+
   if (embedded) document.body.append(panel);
   else document.body.append(fab, panel);
   setMode('spark');
   if (embedded) toggle(true);
 
-  // With the extension installed, the assistant can work with real Chrome tabs.
+  // With the extension installed, the assistant can work with all Chrome tabs; without it,
+  // with the browser tabs it opens itself.
   connectExtension().then((info) => {
     extension = info;
-    if (!info) return paint();
+    showModes();
     modeSwitch.hidden = embedded;
-    setMode(embedded ? 'browser' : readMode() || 'browser');
+    setMode(embedded ? 'browser' : readMode() || (info ? 'browser' : 'opened'));
   });
 
   return {

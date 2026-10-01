@@ -15,7 +15,7 @@ import { suggest } from './providers/suggest.js';
 import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
 import { aiEnabled, aiProvider, aiStatus, complete, streamChat, agentStep } from './ai/llm.js';
-import { toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../public/js/shared/agent.js';
+import { modeOf, toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../public/js/shared/agent.js';
 import { sanitizeHistory, validChat, shouldSearch, toModelMessages } from '../public/js/shared/chat.js';
 import { buildSources, publicSources, readPage, readForTab } from './ai/context.js';
 import { forDisplay } from './providers/normalize.js';
@@ -390,7 +390,7 @@ const routes = {
   // One step of the tab assistant (the loop and the tools run in the browser).
   async 'POST /api/agent'(req, res) {
     const body = await readBody(req, 400 * 1024);
-    const mode = body?.mode === 'browser' ? 'browser' : 'spark';
+    const mode = modeOf(body?.mode);
     const messages = sanitizeAgentMessages(body?.messages, mode);
     if (!messages) return json(res, 400, { error: 'Invalid assistant conversation' });
     if (!aiEnabled()) return json(res, 503, { error: 'Spark AI is not set up on this server.' });

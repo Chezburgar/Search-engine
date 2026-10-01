@@ -162,9 +162,10 @@ export function agentReply(body) {
   // The tab the user is looking at (in Chrome mode, never the assistant's own tab).
   const tabSection = msgs[0].content.split(/right now:\n/).at(-1);
   const listed = [...tabSection.matchAll(/^- (\S+) (.*)$/gm)];
+  const self = /this Spark (assistant|page)/;
   const focus =
-    listed.find((m) => /\((showing|active)\)/.test(m[2]) && !/this Spark assistant/.test(m[2])) ||
-    listed.find((m) => !/this Spark assistant/.test(m[2]));
+    listed.find((m) => /\((showing|active|opened most recently)\)/.test(m[2]) && !self.test(m[2])) ||
+    listed.find((m) => !self.test(m[2]));
   const showing = focus ? (chrome ? Number(focus[1]) : focus[1]) : 'spark';
   const others = (tabs) => tabs.filter((t) => t.id !== 'spark' && !t.self).map((t) => t.id);
   let n = 0;
@@ -175,8 +176,11 @@ export function agentReply(body) {
   });
   const reply = (message) => json({ choices: [{ message: { role: 'assistant', content: null, ...message } }] });
   if (!body.tools) return reply({ content: 'Final answer without tools.' });
+  const has = (name) => body.tools.some((t) => t.function.name === name);
 
-  if (/close all/.test(request)) {
+  if (/close (all|the tabs)/.test(request)) {
+    if (!has('close_tabs'))
+      return reply({ content: "I can't close tabs without the Spark Chrome extension — close them yourself." });
     if (!toolResults.length) return reply({ tool_calls: [call('list_tabs', {})] });
     if (toolResults.length === 1)
       return reply({ tool_calls: [call('close_tabs', { tab_ids: others(toolResults[0].tabs) })] });
@@ -205,6 +209,8 @@ export function agentReply(body) {
         tool_calls: results.slice(0, count).map((r) => call('open_tab', { url: r.url, background: true })),
       });
     }
+    const failed = toolResults.slice(1).find((r) => r.error);
+    if (failed) return reply({ content: `I couldn't open them: ${failed.error}` });
     return reply({ content: `Opened ${toolResults.length - 1} results in new tabs.` });
   }
   if (/summari[sz]e/.test(request)) {

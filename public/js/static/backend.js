@@ -21,7 +21,7 @@ import { openverseUrl, mapOpenverse, commonsUrl, mapCommons } from '../shared/im
 import { baseSources, publicSources, chatSearchQuery } from '../shared/sources.js';
 import { stripTags, relevantPassages } from '../shared/text.js';
 import { createGoogle } from '../shared/google.js';
-import { toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../shared/agent.js';
+import { modeOf, toolsFor, agentSystemPrompt, sanitizeAgentMessages, sanitizeTabList } from '../shared/agent.js';
 import { wikipediaArticle, wikipediaParseUrl, wikipediaToReader, cleanReaderMarkdown } from '../shared/reader.js';
 import { searchYouTube } from '../shared/youtube.js';
 import {
@@ -491,7 +491,7 @@ export function createBackend(cfg = {}) {
     },
 
     async '/api/agent'({ messages, tabs, final, mode }, { signal }) {
-      mode = mode === 'browser' ? 'browser' : 'spark';
+      mode = modeOf(mode);
       const clean = sanitizeAgentMessages(messages, mode);
       if (!clean) throw new ApiError(400, 'Invalid assistant conversation');
       if (!llm.enabled()) throw new ApiError(503, "Spark AI isn't set up on this site (no AI key).");

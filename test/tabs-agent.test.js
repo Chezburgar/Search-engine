@@ -345,3 +345,41 @@ test('Chrome-tab mode: its own tools, prompt and validation', async () => {
   );
   assert.match(sent.messages[0].content, /- 42: Gmail/);
 });
+
+test('browser-tabs mode (no extension): tools and instructions for tabs Spark opens', async () => {
+  assert.deepEqual([...agent.toolNames('opened')], ['list_tabs', 'read_tab', 'open_tab', 'search_web', 'show_search']);
+  assert.equal(agent.modeOf('nonsense'), 'spark');
+  const prompt = agent.agentSystemPrompt(
+    agent.sanitizeTabList([
+      { id: 'spark', title: 'Spark (this page)', url: 'https://x/', self: true },
+      { id: 'w1', title: 'NASA', url: 'https://nasa.gov/', newest: true },
+    ]),
+    'opened'
+  );
+  assert.match(prompt, /open real browser tabs for the user and read the pages you opened/);
+  assert.match(prompt, /can't switch to, redirect or close any tab/);
+  assert.match(prompt, /- w1 \(opened most recently\): NASA — https:\/\/nasa\.gov\//);
+  assert.match(prompt, /pop-ups are blocked/);
+
+  const backend = createBackend({ mode: 'static', aiKey: 'gsk_test' });
+  await backend.json('/api/agent', {
+    mode: 'opened',
+    messages: [{ role: 'user', content: 'Close the tabs you opened' }],
+  });
+  const sent = JSON.parse(calls.filter((c) => c.url.includes('api.groq.com/openai/v1/chat/completions')).at(-1).body);
+  assert.deepEqual(
+    sent.tools.map((t) => t.function.name),
+    [...agent.toolNames('opened')]
+  );
+  // Chrome-only tools aren't accepted in this mode.
+  assert.equal(
+    agent.sanitizeAgentMessages(
+      [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', tool_calls: [{ id: 'c1', function: { name: 'close_tabs', arguments: '{}' } }] },
+      ],
+      'opened'
+    ),
+    null
+  );
+});

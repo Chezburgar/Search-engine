@@ -125,6 +125,17 @@ Clicking any web link inside Spark opens it in a Spark tab (tabs last for the br
   tabs (a web page can't; that would need a browser extension). Page text is passed to the model as
   data, and the model is told never to follow instructions found in pages.
 
+## Real browser tabs without the extension
+
+If extensions can't be installed (for example on a managed school or work browser), the assistant's
+**Browser tabs** mode works with real tabs that Spark opens itself: it opens pages in new browser
+tabs (allow pop-ups for Spark once) and reads the pages it opened, via `/api/read`. Each tab is cut
+off from Spark (`window.opener = null`) before the site loads. That stops a site from redirecting
+the Spark tab to a fake page (reverse tabnabbing), and it's also why Spark can't switch to,
+redirect or close those tabs: browsers only allow that while the tabs stay linked, and the link is
+what a malicious site would abuse. Seeing tabs you opened yourself, and showing every site inside
+Spark tabs, need the extension; a web page can't do either.
+
 ## Chrome extension (real tabs, and no embed problems)
 
 `extension/` is **Spark Assistant for Chrome** (Manifest V3). With it installed:
