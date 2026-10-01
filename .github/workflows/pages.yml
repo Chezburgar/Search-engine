@@ -1,0 +1,59 @@
+# Publishes the static Spark build to GitHub Pages.
+#
+# Keys come from repository secrets (Settings → Secrets and variables → Actions):
+#   XAI_API_KEY       Grok key — enables AI overviews, chat and summaries
+#   KEENABLE_API_KEY  Keenable web search key (optional; keyless endpoint otherwise)
+# They are inserted into the built site only, never committed. Note that every visitor
+# can read them from spark-config.js.
+#
+# Requires Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main, claude/elegant-maxwell-b3rq5s]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build static site
+        run: node scripts/build-pages.mjs
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          KEENABLE_API_KEY: ${{ secrets.KEENABLE_API_KEY }}
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -81,22 +81,25 @@ Browser (vanilla JS, no build step)
 GitHub Pages can only host static files, so the Pages build has no server: an in-browser
 backend (`public/js/static/backend.js`) answers the same `/api/*` calls by calling
 Keenable, Grok, Wikipedia, Open-Meteo and Openverse directly from the visitor's browser.
+The live site is https://chezburgar.github.io/Search-engine/.
 
-```bash
-npm run deploy:pages          # builds dist/ and force-pushes it to the gh-pages branch
-npm run build:pages           # just build dist/ (serve it with any static server)
-```
+**Publishing (GitHub Actions).** `.github/workflows/pages.yml` runs the tests, builds the
+site and deploys it on every push (or from Actions → *Deploy to GitHub Pages* → *Run
+workflow*). Keys come from repository secrets, so they never enter git history. One-time setup:
 
-The site is published at the URL in `package.json` → `homepage`
-(https://chezburgar.github.io/Search-engine/). If Pages isn't on yet: repository
-**Settings → Pages → Build and deployment → Deploy from a branch → `gh-pages` / root**.
+1. **Settings → Secrets and variables → Actions → New repository secret**: add
+   `XAI_API_KEY` and `KEENABLE_API_KEY`.
+2. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
 
-> **The keys are public on Pages.** The build writes `XAI_API_KEY` and `KEENABLE_API_KEY`
-> from `.env` into `dist/spark-config.js`, which every visitor downloads. Anyone can copy
-> them and use your quota. Use keys you're comfortable sharing, set spending limits, and
-> rotate them if they're abused. `npm run deploy:pages -- --no-keys` publishes without
-> keys (search keeps working through Keenable's keyless endpoint; AI features turn off).
-> For private keys, run the Node server instead (see Deploying).
+> **The keys are public on Pages.** The build writes them into `spark-config.js`, which
+> every visitor downloads, so anyone can copy them and use your quota. Use keys you're
+> comfortable sharing, set spending limits, and rotate them if they're abused. Leave the
+> `XAI_API_KEY` secret out to publish without AI. For private keys, run the Node server
+> instead (see Deploying).
+
+To build locally: `npm run build:pages` writes `dist/` (serve it with any static server).
+`npm run deploy:pages -- --no-keys` pushes a keyless build to the `gh-pages` branch;
+GitHub's push protection rejects builds that contain the xAI key, by design.
 
 Compared with the server, the static build has no DuckDuckGo/Bing fallback (Wikipedia
 is the fallback), takes suggestions from Wikipedia, gets news from Keenable, has no
