@@ -1,5 +1,9 @@
 // End-to-end API tests with all upstream services (xAI, search providers) mocked.
+// Pin every setting the tests depend on so a developer's .env can't leak in.
 process.env.XAI_API_KEY = 'test-key';
+process.env.GROQ_API_KEY = '';
+process.env.AI_API_KEY = '';
+process.env.AI_PROVIDER = '';
 process.env.XAI_MODEL = '';
 process.env.KEENABLE_API_KEY = 'keen_test';
 process.env.MOCK_DELAY = '0';
@@ -179,6 +183,30 @@ test('chat grounds each turn in web sources', async () => {
   assert.match(body.messages[3].content, /Web sources for this message/);
   const searched = JSON.parse(calls.filter((c) => c.url.includes('keenable.ai/v1/search')).at(-1).body).query;
   assert.equal(searched, 'black holes how are they detected?');
+});
+
+test('chat sends attached images to the model and skips search for "what is this"', async () => {
+  const before = calls.length;
+  const image = 'data:image/jpeg;base64,/9j/AAAA';
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: "What's in this image?", images: [image, 'nope'] }] }),
+  });
+  const evs = events(await res.text());
+  assert.match(
+    evs
+      .filter((e) => e.name === 'token')
+      .map((e) => e.data.t)
+      .join(''),
+    /^The image shows/
+  );
+  assert.equal(calls.slice(before).filter((c) => c.url.includes('keenable')).length, 0);
+  const body = JSON.parse(calls.filter((c) => c.url.includes('chat/completions')).at(-1).body);
+  assert.deepEqual(body.messages.at(-1).content, [
+    { type: 'text', text: "What's in this image?" },
+    { type: 'image_url', image_url: { url: image } },
+  ]);
 });
 
 test('chat rejects malformed requests', async () => {

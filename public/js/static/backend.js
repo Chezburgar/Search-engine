@@ -2,7 +2,8 @@
 // but from the browser, calling the upstream APIs directly. Keys come from
 // spark-config.js, which the Pages build writes.
 
-import { createGrok } from '../shared/grok.js';
+import { createLLM, detectProvider } from '../shared/llm.js';
+import { sanitizeHistory, validChat, shouldSearch, toModelMessages } from '../shared/chat.js';
 import { Cache } from '../shared/cache.js';
 import {
   keenableRequest,
@@ -11,6 +12,7 @@ import {
   mapKeenableFetch,
   pageWindow,
   hasMore,
+  displaySnippet,
 } from '../shared/keenable.js';
 import { normalizeResult, dedupe, forDisplay, firstSuccessful, hostOf } from '../shared/results.js';
 import { wikiSearchUrl, wikiSummaryUrl, pickEntity, knowledgeFromSummary } from '../shared/knowledge.js';
@@ -18,7 +20,7 @@ import { parseWeatherQuery, lookupWeather } from '../shared/weather.js';
 import { openverseUrl, mapOpenverse, commonsUrl, mapCommons } from '../shared/images.js';
 import { wantsOverview } from '../shared/intent.js';
 import { baseSources, publicSources, newsSources, chatSearchQuery } from '../shared/sources.js';
-import { stripTags } from '../shared/text.js';
+import { stripTags, relevantPassages } from '../shared/text.js';
 import {
   overviewMessages,
   relatedMessages,
@@ -53,11 +55,14 @@ const cleanQuery = (q) =>
 
 export function createBackend(cfg = {}) {
   const lang = (cfg.region || 'us-en').split('-')[1] || 'en';
-  const grok = createGrok({
-    apiKey: cfg.xaiKey || '',
-    model: cfg.xaiModel || '',
-    chatModel: cfg.xaiChatModel || '',
-    keyHint: "this site's xAI key",
+  const aiKey = cfg.aiKey || cfg.xaiKey || '';
+  const llm = createLLM({
+    provider: cfg.aiProvider || detectProvider(aiKey) || 'xai',
+    apiKey: aiKey,
+    model: cfg.aiModel || cfg.xaiModel || '',
+    chatModel: cfg.aiChatModel || '',
+    visionModel: cfg.aiVisionModel || '',
+    keyHint: "this site's AI key",
   });
   const cache = {
     web: new Cache({ max: 100, ttl: 10 * 60 * 1000 }),
@@ -72,15 +77,47 @@ export function createBackend(cfg = {}) {
 
   /* ------------------------------- providers ------------------------------ */
 
+  // A TypeError from fetch means the browser refused the call (usually CORS); stop trying Keenable.
+  let keenableBlocked = false;
+  const keenableCall = async (args) => {
+    try {
+      return await keenable(args);
+    } catch (err) {
+      if (err instanceof TypeError) keenableBlocked = true;
+      throw err;
+    }
+  };
+
   const webProviders = [
     {
       name: 'Keenable',
+      enabled: () => !keenableBlocked,
       async search(q, page) {
         const { want, from } = pageWindow(page);
-        const all = mapKeenableResults(await keenable({ path: '/v1/search', body: searchBody(q, want) }), q);
+        const all = mapKeenableResults(await keenableCall({ path: '/v1/search', body: searchBody(q, want) }), q);
         return {
           results: all.slice(from, want).map(normalizeResult),
           next: hasMore(all.length, want) ? JSON.stringify({ p: 'Keenable', page: page + 1 }) : null,
+        };
+      },
+    },
+    {
+      // Groq's built-in web search, for when Keenable refuses calls from the browser.
+      name: 'Groq web search',
+      enabled: () => llm.enabled() && Boolean(llm.provider.searchModel),
+      async search(q, page) {
+        if (page > 1) return { results: [], next: null };
+        const found = await llm.webSearch(q);
+        return {
+          results: found.map((r) =>
+            normalizeResult({
+              title: r.title,
+              url: r.url,
+              snippet: displaySnippet(r.content, q),
+              extract: relevantPassages(r.content, q, 1400),
+            })
+          ),
+          next: null,
         };
       },
     },
@@ -125,7 +162,10 @@ export function createBackend(cfg = {}) {
       const out = await provider.search(q, c.page || 1);
       return { results: dedupe(out.results), provider: provider.name, next: out.next };
     }
-    const out = await firstSuccessful(webProviders, (p) => p.search(q, 1));
+    const out = await firstSuccessful(
+      webProviders.filter((p) => !p.enabled || p.enabled()),
+      (p) => p.search(q, 1)
+    );
     return { ...out, results: dedupe(out.results) };
   }
 
@@ -147,30 +187,44 @@ export function createBackend(cfg = {}) {
       }
     });
 
-  // Recent coverage from Keenable. If the date filter isn't accepted, ask for news in the query instead.
+  // Recent coverage from Keenable (falling back to Groq web search). If the date filter
+  // isn't accepted, ask for news in the query instead.
   async function searchNews(q) {
-    const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-    let data;
-    try {
-      data = await keenable({ path: '/v1/search', body: searchBody(q, 20, { published_after: since }) });
-    } catch (err) {
-      if (!(err instanceof ApiError) || err.status >= 500) throw err;
-      data = await keenable({ path: '/v1/search', body: searchBody(`${q} latest news`, 20) });
-    }
-    const results = mapKeenableResults(data, q).map((r) => {
+    const toItem = (r) => {
       const host = hostOf(r.url);
       return {
         title: stripTags(r.title) || host,
         url: r.url,
         source: host,
         host,
-        date: r.published,
+        date: r.published || null,
         snippet: r.snippet,
         image: null,
       };
-    });
-    results.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    return { results, provider: 'Keenable' };
+    };
+    if (!keenableBlocked) {
+      try {
+        const since = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+        let data;
+        try {
+          data = await keenableCall({ path: '/v1/search', body: searchBody(q, 20, { published_after: since }) });
+        } catch (err) {
+          if (!(err instanceof ApiError) || err.status >= 500) throw err;
+          data = await keenableCall({ path: '/v1/search', body: searchBody(`${q} latest news`, 20) });
+        }
+        const results = mapKeenableResults(data, q).map(toItem);
+        results.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        if (results.length) return { results, provider: 'Keenable' };
+      } catch {}
+    }
+    if (llm.enabled() && llm.provider.searchModel) {
+      const found = await llm.webSearch(`latest news about ${q}`);
+      return {
+        results: found.map((r) => toItem({ ...r, snippet: displaySnippet(r.content, q) })),
+        provider: 'Groq web search',
+      };
+    }
+    return { results: [], provider: null };
   }
 
   const newsFor = (q) => cache.misc.wrap(`news:${q.toLowerCase()}`, () => searchNews(q), 5 * 60 * 1000);
@@ -204,11 +258,11 @@ export function createBackend(cfg = {}) {
   /* --------------------------------- AI ----------------------------------- */
 
   const notConfigured = (onEvent) =>
-    onEvent('error', { code: 'not_configured', message: "Spark AI isn't set up on this site (no xAI key)." });
+    onEvent('error', { code: 'not_configured', message: "Spark AI isn't set up on this site (no AI key)." });
 
   async function pipe(messages, opts, signal, onEvent) {
     let text = '';
-    for await (const t of grok.streamChat({ ...opts, messages, signal })) {
+    for await (const t of llm.streamChat({ ...opts, messages, signal })) {
       text += t;
       onEvent('token', { t });
     }
@@ -224,7 +278,7 @@ export function createBackend(cfg = {}) {
 
   const json = {
     async '/api/status'() {
-      return { ai: { enabled: grok.enabled(), model: cfg.xaiModel || null }, braveSearch: false, mode: 'static' };
+      return { ai: await llm.status({ resolve: false }), braveSearch: false, mode: 'static' };
     },
 
     async '/api/search'({ q, cursor }) {
@@ -246,7 +300,7 @@ export function createBackend(cfg = {}) {
         provider: web.provider,
         next: web.next || null,
         weather: weather || null,
-        overview: grok.enabled() && !cursor && !weather && wantsOverview(q, web.results),
+        overview: llm.enabled() && !cursor && !weather && wantsOverview(q, web.results),
         elapsedMs: Math.round(performance.now() - started),
       };
     },
@@ -278,13 +332,13 @@ export function createBackend(cfg = {}) {
 
     async '/api/related'({ q }) {
       q = cleanQuery(q);
-      if (!grok.enabled() || !q) return { questions: [] };
+      if (!llm.enabled() || !q) return { questions: [] };
       const key = `rel:${q.toLowerCase()}`;
       const hit = cache.ai.get(key);
       if (hit) return { questions: hit };
       try {
         const web = await webFor(q).catch(() => ({ results: [] }));
-        const text = await grok.complete({
+        const text = await llm.complete({
           messages: relatedMessages(
             q,
             web.results.slice(0, 6).map((r) => r.title)
@@ -304,7 +358,7 @@ export function createBackend(cfg = {}) {
   const streams = {
     async '/api/overview'({ q, kind, fresh }, { signal, onEvent }) {
       q = cleanQuery(q);
-      if (!grok.enabled()) return notConfigured(onEvent);
+      if (!llm.enabled()) return notConfigured(onEvent);
       kind = kind === 'news' ? 'news' : 'web';
       const key = `ov:${kind}:${q.toLowerCase()}`;
       const hit = fresh ? null : cache.ai.get(key);
@@ -341,26 +395,22 @@ export function createBackend(cfg = {}) {
     },
 
     async '/api/chat'(body, { signal, onEvent }) {
-      const history = (Array.isArray(body?.messages) ? body.messages : [])
-        .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-        .slice(-16)
-        .map((m) => ({ role: m.role, content: m.content.slice(0, 6000) }));
+      const history = sanitizeHistory(body?.messages);
+      if (!validChat(history)) throw new ApiError(400, 'Missing question');
+      if (!llm.enabled()) return notConfigured(onEvent);
       const last = history[history.length - 1];
-      if (!last || last.role !== 'user' || !last.content.trim()) throw new ApiError(400, 'Missing question');
-      if (!grok.enabled()) return notConfigured(onEvent);
       try {
-        onEvent('status', { stage: 'searching' });
-        const searchQuery = chatSearchQuery(history);
-        const web = await webFor(cleanQuery(searchQuery)).catch(() => ({ results: [] }));
-        onEvent('status', { stage: 'reading', count: Math.min(web.results.length, 6) });
-        const sources = baseSources(web.results, { limit: 6 });
+        let sources = [];
+        if (shouldSearch(last)) {
+          onEvent('status', { stage: 'searching' });
+          const searchQuery = chatSearchQuery(history);
+          const web = await webFor(cleanQuery(searchQuery)).catch(() => ({ results: [] }));
+          onEvent('status', { stage: 'reading', count: Math.min(web.results.length, 6) });
+          sources = baseSources(web.results, { limit: 6 });
+        }
         onEvent('sources', publicSources(sources));
         onEvent('status', { stage: 'writing' });
-        const messages = [
-          { role: 'system', content: chatSystemPrompt() },
-          ...history.slice(0, -1),
-          { role: 'user', content: chatUserMessage(last.content, sources) },
-        ];
+        const messages = toModelMessages(chatSystemPrompt(), history, chatUserMessage(last.content, sources));
         await pipe(messages, { kind: 'chat', temperature: 0.4, maxTokens: 1600 }, signal, onEvent);
         onEvent('done', {});
       } catch (err) {
@@ -376,7 +426,7 @@ export function createBackend(cfg = {}) {
       } catch {
         throw new ApiError(400, 'Invalid URL');
       }
-      if (!grok.enabled()) return notConfigured(onEvent);
+      if (!llm.enabled()) return notConfigured(onEvent);
       q = cleanQuery(q).slice(0, 200);
       const key = `sum:${target.href}:${q.toLowerCase()}`;
       const hit = cache.ai.get(key);
@@ -389,7 +439,7 @@ export function createBackend(cfg = {}) {
         let page;
         try {
           page = mapKeenableFetch(
-            await keenable({
+            await keenableCall({
               path: '/v1/fetch',
               query: { url: target.href, max_chars: '20000' },
               signal,
@@ -399,6 +449,19 @@ export function createBackend(cfg = {}) {
           );
         } catch (err) {
           if (signal?.aborted) throw err;
+          // No page reader in the browser: let Groq's browsing tool read and summarize it.
+          if (llm.provider.searchModel) {
+            onEvent('status', { stage: 'writing' });
+            const summary = await llm.askWithTools(
+              `Visit ${target.href} and summarize the page${q ? ` for someone who searched "${q}"` : ''}.\nFormat: "**TL;DR:** one sentence", then 3–5 bullet points with the most useful facts. Under 130 words. Only use what the page says.`,
+              { signal }
+            );
+            if (summary) {
+              cache.ai.set(key, summary);
+              onEvent('token', { t: summary });
+              return onEvent('done', {});
+            }
+          }
           return onEvent('error', { code: 'unreadable', message: `Spark couldn't open that page (${err.message}).` });
         }
         const text = page.text.slice(0, 9000);

@@ -117,6 +117,11 @@ When a star more than about **20 times the Sun's mass** exhausts its nuclear fue
 | Supermassive | millions–billions of Suns |
 
 Want to know how we *detect* them?`,
+  vision: () =>
+    `The image shows an **artist's illustration of a black hole**: a dark central shadow ringed by a bright, orange accretion disk.
+
+- The glowing ring is hot gas spiraling inward.
+- The dark center marks the event horizon's shadow.`,
   summarize: () =>
     `**TL;DR:** NASA explains what black holes are, how they form, and how astronomers find them.
 
@@ -130,13 +135,29 @@ How big is the largest black hole?
 Is there a black hole near Earth?`,
 };
 
+const hasImage = (body) =>
+  body.messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'));
+const textOf = (content) =>
+  Array.isArray(content) ? content.find((p) => p.type === 'text')?.text || '' : content || '';
+
 function pickAnswer(body) {
+  if (hasImage(body)) return 'vision';
   const sys = body.messages?.[0]?.content || '';
   if (/People also ask/.test(sys)) return 'related';
   if (/summarize web pages/.test(sys)) return 'summarize';
   if (/news briefing/.test(sys)) return 'news';
   if (/search overview/.test(sys)) return 'overview';
   return 'chat';
+}
+
+function chatReply(body, { think = false } = {}) {
+  const kind = pickAnswer(body);
+  const lastUser = textOf([...body.messages].reverse().find((m) => m.role === 'user')?.content);
+  let answer = ANSWERS[kind](lastUser.split('\n')[0].replace(/^Query: /, ''));
+  // Some reasoning models put their thinking inline; Spark must strip it.
+  if (think) answer = `<think>Let me look at the image carefully.</think>\n${answer}`;
+  if (!body.stream) return json({ choices: [{ message: { role: 'assistant', content: answer } }] });
+  return new Response(sseStream(answer), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
 function sseStream(text) {
@@ -178,13 +199,59 @@ async function mockFetch(input, init = {}) {
         ].map((id) => ({ id })),
       });
     }
-    const body = JSON.parse(init.body);
     if (process.env.MOCK_XAI_FAIL) return json({ error: 'Incorrect API key provided' }, 401);
-    const kind = pickAnswer(body);
-    const lastUser = [...body.messages].reverse().find((m) => m.role === 'user')?.content || '';
-    const answer = ANSWERS[kind](lastUser.split('\n')[0].replace(/^Query: /, ''));
-    if (!body.stream) return json({ choices: [{ message: { role: 'assistant', content: answer } }] });
-    return new Response(sseStream(answer), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    return chatReply(JSON.parse(init.body));
+  }
+  if (host === 'api.groq.com') {
+    if (url.pathname.endsWith('/models')) {
+      return json({
+        data: [
+          'whisper-large-v3',
+          'openai/gpt-oss-20b',
+          'qwen/qwen3.6-27b',
+          'groq/compound-mini',
+          'openai/gpt-oss-120b',
+          'meta-llama/llama-guard-4-12b',
+        ].map((id) => ({ id })),
+      });
+    }
+    const body = JSON.parse(init.body);
+    if (body.model === 'groq/compound-mini') {
+      const prompt = textOf(body.messages[0].content);
+      if (/^Visit /.test(prompt)) {
+        return json({ choices: [{ message: { role: 'assistant', content: ANSWERS.summarize() } }] });
+      }
+      const query = prompt.replace(/^Search the web for: /, '').split('\n')[0];
+      return json({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'Here are relevant pages.',
+              executed_tools: [
+                {
+                  index: 0,
+                  type: 'search',
+                  arguments: JSON.stringify({ query }),
+                  search_results: {
+                    results: SITES.slice(0, 5).map(([title, url, snippet], i) => ({
+                      title,
+                      url,
+                      content: `${snippet} More on ${query}.`,
+                      score: 0.9 - i / 10,
+                    })),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    }
+    if (body.reasoning_format && !/qwen3/.test(body.model)) {
+      return json({ error: { message: 'reasoning_format is not supported with this model' } }, 400);
+    }
+    return chatReply(body, { think: /qwen3/.test(body.model) });
   }
   if (host === 'api.keenable.ai') {
     if (url.pathname.startsWith('/v1/search')) {

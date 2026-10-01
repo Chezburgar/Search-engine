@@ -63,8 +63,17 @@ export async function stream(path, { params, body, signal, onEvent }) {
 
 export const safe = () => settings.get('safe');
 
+let aiInfo = { enabled: false, provider: 'AI' };
+// The AI provider's display name ("Groq", "Grok"), known after aiStatus() resolves.
+export const aiLabel = () => aiInfo.provider || 'AI';
+
 let statusPromise;
 export function aiStatus() {
-  statusPromise ||= getJSON('/api/status').catch(() => ({ ai: { enabled: false } }));
+  statusPromise ||= getJSON('/api/status')
+    .catch(() => ({ ai: { enabled: false } }))
+    .then((status) => {
+      aiInfo = { ...aiInfo, ...(status.ai || {}) };
+      return status;
+    });
   return statusPromise;
 }

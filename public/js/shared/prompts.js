@@ -59,6 +59,7 @@ Each user message may come with fresh numbered web sources. Use them to give acc
 - Bold key terms sparingly. Use "###" headings only for longer answers.
 - ${CITATION_RULES} Citation numbers refer to the sources attached to the latest message.
 - If sources are missing or irrelevant, rely on your own knowledge and say when something may be out of date.
+- When the user attaches images, look at them carefully: describe, identify, read text, or solve what's shown, and say when you're unsure.
 - Be concise by default (under 250 words) unless the user asks for depth, code, or a plan.`;
 }
 

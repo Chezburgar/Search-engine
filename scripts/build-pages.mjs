@@ -1,6 +1,6 @@
 // Builds the static GitHub Pages version of Spark into dist/.
 //
-// The browser calls Keenable and xAI directly, so the keys from .env are written into
+// The browser calls Keenable and the AI provider directly, so the keys from .env are written into
 // dist/spark-config.js and are PUBLIC to anyone who visits the site. Pass --no-keys to
 // publish without them (search still works via Keenable's keyless endpoint; AI is off).
 import fs from 'node:fs';
@@ -18,9 +18,11 @@ fs.cpSync(path.join(ROOT, 'public'), out, { recursive: true });
 const siteConfig = {
   mode: 'static',
   region: config.region,
-  xaiModel: config.xai.model,
-  xaiChatModel: config.xai.chatModel,
-  xaiKey: withKeys ? config.xai.apiKey : '',
+  aiProvider: config.ai.provider,
+  aiModel: config.ai.model,
+  aiChatModel: config.ai.chatModel,
+  aiVisionModel: config.ai.visionModel,
+  aiKey: withKeys ? config.ai.apiKey : '',
   keenableKey: withKeys ? config.keenable.apiKey : '',
 };
 fs.writeFileSync(
@@ -45,5 +47,5 @@ fs.writeFileSync(
 );
 
 console.log(`Built static site in dist/ for ${siteUrl}`);
-console.log(`  Grok AI:  ${siteConfig.xaiKey ? 'on (key included — public)' : 'off (no xAI key)'}`);
+console.log(`  AI:       ${siteConfig.aiKey ? `${config.ai.provider} (key included — public)` : 'off (no AI key)'}`);
 console.log(`  Keenable: ${siteConfig.keenableKey ? 'API key included (public)' : 'keyless public endpoint'}`);

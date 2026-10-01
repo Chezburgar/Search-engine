@@ -1,4 +1,5 @@
-import { h, icon, clear, debounce } from '../lib/dom.js';
+import { h, icon, clear, debounce, toast } from '../lib/dom.js';
+import { pickImages, imageFiles, toDataUrls } from '../lib/images.js';
 import { getJSON } from '../lib/api.js';
 import { recent } from '../lib/store.js';
 
@@ -6,7 +7,8 @@ const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecogni
 let uid = 0;
 
 // Google-style combobox: suggestions, recent searches, "Ask Spark" shortcut and voice input.
-export function createSearchBox({ value = '', compact = false, autofocus = false, onSubmit }) {
+// `onImage(dataUrls, text)` turns on the "Ask about an image" button and image pasting.
+export function createSearchBox({ value = '', compact = false, autofocus = false, onSubmit, onImage }) {
   const listId = `suggest-${++uid}`;
   let items = [];
   let active = -1;
@@ -43,6 +45,18 @@ export function createSearchBox({ value = '', compact = false, autofocus = false
         icon('mic')
       )
     : null;
+  const imageBtn = onImage
+    ? h(
+        'button',
+        {
+          type: 'button',
+          class: 'iconbtn searchbox__image',
+          'aria-label': 'Ask Spark about an image',
+          title: 'Ask about an image',
+        },
+        icon('image')
+      )
+    : null;
   const askBtn = h(
     'button',
     { type: 'button', class: 'searchbox__ask', 'aria-label': 'Ask Spark AI', title: 'Ask Spark AI' },
@@ -57,7 +71,8 @@ export function createSearchBox({ value = '', compact = false, autofocus = false
       icon('search', 'searchbox__icon'),
       input,
       clearBtn,
-      micBtn ? h('span', { class: 'searchbox__sep', 'aria-hidden': 'true' }) : null,
+      micBtn || imageBtn ? h('span', { class: 'searchbox__sep', 'aria-hidden': 'true' }) : null,
+      imageBtn,
       micBtn,
       askBtn
     ),
@@ -264,6 +279,27 @@ export function createSearchBox({ value = '', compact = false, autofocus = false
     render('', []);
   });
   askBtn.addEventListener('click', () => submit(undefined, 'ai'));
+
+  if (onImage) {
+    const sendImages = async (files) => {
+      try {
+        const urls = await toDataUrls(files);
+        if (!urls.length) return;
+        close();
+        onImage(urls, input.value.trim());
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+    imageBtn.addEventListener('click', async () => sendImages(await pickImages()));
+    input.addEventListener('paste', (e) => {
+      const files = imageFiles(e.clipboardData);
+      if (files.length) {
+        e.preventDefault();
+        sendImages(files);
+      }
+    });
+  }
 
   if (micBtn) {
     let rec = null;

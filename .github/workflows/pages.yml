@@ -1,7 +1,8 @@
 # Publishes the static Spark build to GitHub Pages.
 #
 # Keys come from repository secrets (Settings → Secrets and variables → Actions):
-#   XAI_API_KEY       Grok key — enables AI overviews, chat and summaries
+#   GROQ_API_KEY      Groq key (gsk_…) — enables AI overviews, chat, image questions and summaries
+#   XAI_API_KEY       or an xAI Grok key (xai-…) instead; Groq is used when both are set
 #   KEENABLE_API_KEY  Keenable web search key (optional; keyless endpoint otherwise)
 # They are inserted into the built site only, never committed. Note that every visitor
 # can read them from spark-config.js.
@@ -46,6 +47,7 @@ jobs:
       - name: Build static site
         run: node scripts/build-pages.mjs
         env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           KEENABLE_API_KEY: ${{ secrets.KEENABLE_API_KEY }}
           PAGES_URL: ${{ steps.pages.outputs.base_url }}

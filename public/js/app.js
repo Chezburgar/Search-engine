@@ -63,6 +63,12 @@ function openChat(q, value) {
   go(q, 'ai');
 }
 
+// From the search box's image button: start a Spark AI chat about the pictures.
+function askAboutImages(images, text) {
+  const question = text || "What's in this image?";
+  openChat(question, { ask: question, images });
+}
+
 function onSettings(key) {
   if (key === 'theme') applyTheme();
   if ((key === 'safe' || key === 'overview') && parseLocation().view === 'results') render();
@@ -70,7 +76,11 @@ function onSettings(key) {
 
 function buildShell() {
   // A new query from the header stays on the current tab.
-  const searchbox = createSearchBox({ compact: true, onSubmit: (q, tab) => go(q, tab || shell.tab) });
+  const searchbox = createSearchBox({
+    compact: true,
+    onSubmit: (q, tab) => go(q, tab || shell.tab),
+    onImage: ai.enabled ? askAboutImages : undefined,
+  });
   const tabs = h('nav', { class: 'tabs', 'aria-label': 'Search type' });
   const tabEls = TABS.map((t) => {
     const a = h(
@@ -159,7 +169,7 @@ function render() {
     shell = null;
     document.title = 'Spark';
     document.body.dataset.view = 'home';
-    renderHome(app, { go, onSettings });
+    renderHome(app, { go, onSettings, onImage: ai.enabled ? askAboutImages : undefined });
     return;
   }
 

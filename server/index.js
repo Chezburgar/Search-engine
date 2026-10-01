@@ -11,7 +11,8 @@ import { searchImages } from './providers/images.js';
 import { suggest } from './providers/suggest.js';
 import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
-import { aiEnabled, aiStatus, complete, streamChat } from './ai/grok.js';
+import { aiEnabled, aiProvider, aiStatus, complete, streamChat } from './ai/llm.js';
+import { sanitizeHistory, validChat, shouldSearch, toModelMessages } from '../public/js/shared/chat.js';
 import { buildSources, publicSources, readPage } from './ai/context.js';
 import { forDisplay } from './providers/normalize.js';
 import { assertPublic } from './lib/safe-fetch.js';
@@ -151,7 +152,8 @@ function takeAiQuota(req, stream) {
 function aiUnavailable(stream) {
   stream.send('error', {
     code: 'not_configured',
-    message: 'Spark AI is off because no xAI API key is configured. Add XAI_API_KEY to your .env file and restart.',
+    message:
+      'Spark AI is off because no AI key is configured. Add GROQ_API_KEY or XAI_API_KEY to your .env file and restart.',
   });
   stream.end();
 }
@@ -366,14 +368,11 @@ const routes = {
 
   // Conversational search. Each user turn is grounded in a fresh web search.
   async 'POST /api/chat'(req, res) {
-    const body = await readBody(req);
+    const body = await readBody(req, 12 * 1024 * 1024); // room for a few attached images
     const safe = safeLevel(body.safe);
-    const history = (Array.isArray(body.messages) ? body.messages : [])
-      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .slice(-16)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 6000) }));
+    const history = sanitizeHistory(body.messages);
+    if (!validChat(history)) return json(res, 400, { error: 'Missing question' });
     const last = history[history.length - 1];
-    if (!last || last.role !== 'user' || !last.content.trim()) return json(res, 400, { error: 'Missing question' });
 
     const stream = openStream(res);
     if (!aiEnabled()) return aiUnavailable(stream);
@@ -381,7 +380,7 @@ const routes = {
 
     try {
       let sources = [];
-      if (body.search !== false) {
+      if (body.search !== false && shouldSearch(last)) {
         stream.send('status', { stage: 'searching' });
         const searchQuery = chatSearchQuery(history);
         const web = await webResults(cleanQuery(searchQuery), safe).catch(() => ({ results: [] }));
@@ -390,11 +389,7 @@ const routes = {
       }
       stream.send('sources', publicSources(sources));
       stream.send('status', { stage: 'writing' });
-      const messages = [
-        { role: 'system', content: chatSystemPrompt() },
-        ...history.slice(0, -1),
-        { role: 'user', content: chatUserMessage(last.content, sources) },
-      ];
+      const messages = toModelMessages(chatSystemPrompt(), history, chatUserMessage(last.content, sources));
       await pipeCompletion(stream, messages, { kind: 'chat', temperature: 0.4, maxTokens: 1600 });
       stream.send('done', {});
       stream.end();
@@ -547,8 +542,8 @@ if (isMain) {
     console.log(`\n  ⚡ Spark is running at http://localhost:${config.port}`);
     console.log(
       aiEnabled()
-        ? '     Spark AI: on (Grok via xAI)'
-        : '     Spark AI: off — add XAI_API_KEY to .env to enable overviews and chat'
+        ? `     Spark AI: on (${aiProvider.label} via ${aiProvider.company})`
+        : '     Spark AI: off — add GROQ_API_KEY or XAI_API_KEY to .env to enable overviews and chat'
     );
     console.log(`     Web results: ${config.braveKey ? 'Brave Search API' : 'DuckDuckGo → Bing → Wikipedia'}\n`);
   });

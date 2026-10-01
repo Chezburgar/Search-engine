@@ -4,7 +4,15 @@ import { parseDuckDuckGo, decodeCursor, parseRssItems } from '../server/provider
 import { parseGoogleNews, parseBingNews } from '../server/providers/news.js';
 import { matchesEntity } from '../server/providers/knowledge.js';
 import { parseWeatherQuery } from '../server/providers/weather.js';
-import { rankModels } from '../server/ai/grok.js';
+import {
+  rankModels,
+  rankGroq,
+  rankGroqVision,
+  detectProvider,
+  thinkFilter,
+  searchResultsFrom,
+} from '../public/js/shared/llm.js';
+import { sanitizeHistory, shouldSearch, toModelMessages, validChat } from '../public/js/shared/chat.js';
 import { parseQuestions } from '../server/ai/prompts.js';
 import { decodeEntities, extractReadable, relevantPassages } from '../server/lib/html.js';
 import { isPrivateAddress } from '../server/lib/safe-fetch.js';
@@ -238,4 +246,75 @@ test('chat follow-ups search with the conversation topic', () => {
     ]),
     'black holes how big?'
   );
+});
+
+test('provider detection and Groq model ranking', () => {
+  assert.equal(detectProvider('gsk_abc'), 'groq');
+  assert.equal(detectProvider('xai-abc'), 'xai');
+  assert.equal(detectProvider('other'), null);
+  const ids = [
+    'whisper-large-v3',
+    'openai/gpt-oss-20b',
+    'qwen/qwen3.6-27b',
+    'groq/compound',
+    'openai/gpt-oss-120b',
+    'meta-llama/llama-guard-4-12b',
+  ];
+  assert.deepEqual(rankGroq(ids), ['openai/gpt-oss-120b', 'openai/gpt-oss-20b']);
+  assert.deepEqual(rankGroqVision(ids), ['qwen/qwen3.6-27b']);
+});
+
+test('think blocks are stripped even when split across chunks', () => {
+  const f = thinkFilter();
+  const out = ['Hi <thi', 'nk>secret', ' plan</th', 'ink>\nAnswer', ' <', 'b>'].map((c) => f(c)).join('') + f('', true);
+  assert.equal(out, 'Hi Answer <b>');
+});
+
+test('Groq search results are found anywhere in executed_tools', () => {
+  const found = searchResultsFrom([
+    { type: 'search', search_results: { results: [{ title: 'A', url: 'https://a.com', content: 'x', score: 1 }] } },
+    {
+      output: JSON.stringify([
+        { title: 'B', url: 'https://b.com', content: 'y' },
+        { title: 'A', url: 'https://a.com' },
+      ]),
+    },
+    { url: 'javascript:alert(1)', title: 'bad' },
+  ]);
+  assert.deepEqual(
+    found.map((r) => r.url),
+    ['https://a.com', 'https://b.com']
+  );
+});
+
+test('chat history keeps valid images (most recent first) and skips search for "what is this"', () => {
+  const img = (n) => `data:image/jpeg;base64,${'A'.repeat(n)}`;
+  const history = sanitizeHistory([
+    { role: 'user', content: 'first', images: [img(4), img(8), img(12)] },
+    { role: 'assistant', content: 'ok', images: [img(4)] },
+    {
+      role: 'user',
+      content: 'second',
+      images: [img(16), img(20), 'data:text/html;base64,AAAA', 'https://x.com/a.png'],
+    },
+  ]);
+  assert.equal(history[2].images.length, 2, 'invalid images dropped');
+  assert.equal(history[1].images.length, 0, 'assistants cannot attach images');
+  assert.equal(history[0].images.length, 2, 'only the 4 most recent images are kept');
+  assert.match(history[0].content, /1 earlier image/);
+  assert.ok(validChat(history));
+  assert.ok(validChat(sanitizeHistory([{ role: 'user', content: '', images: [img(4)] }])));
+  assert.ok(!validChat(sanitizeHistory([{ role: 'user', content: '  ' }])));
+
+  const last = (content, n = 1) => ({ content, images: Array(n).fill(img(4)) });
+  assert.equal(shouldSearch(last("What's in this image?")), false);
+  assert.equal(shouldSearch(last('what is this')), false);
+  assert.equal(shouldSearch(last('Is this plant safe for cats and dogs to eat around the house?')), true);
+  assert.equal(shouldSearch(last('what is this', 0)), true);
+
+  const msgs = toModelMessages('sys', history, 'second + sources');
+  assert.equal(msgs[0].role, 'system');
+  assert.equal(msgs[3].content[0].text, 'second + sources');
+  assert.equal(msgs[3].content[1].type, 'image_url');
+  assert.equal(typeof msgs[2].content, 'string');
 });

@@ -3,6 +3,7 @@ import { createSearchBox } from '../components/searchbox.js';
 import { createSettingsMenu } from '../components/panels.js';
 import { settings } from '../lib/store.js';
 import { searchUrl } from '../lib/routes.js';
+import { aiLabel } from '../lib/api.js';
 
 const IDEAS = [
   'How do black holes form?',
@@ -15,8 +16,8 @@ const IDEAS = [
   'Compare Python vs JavaScript for beginners',
 ];
 
-export function renderHome(root, { go, onSettings }) {
-  const box = createSearchBox({ autofocus: true, onSubmit: (q, tab) => go(q, tab) });
+export function renderHome(root, { go, onSettings, onImage }) {
+  const box = createSearchBox({ autofocus: true, onSubmit: (q, tab) => go(q, tab), onImage });
   const ideas = [...IDEAS].sort(() => Math.random() - 0.5).slice(0, 4);
 
   root.replaceChildren(
@@ -111,7 +112,7 @@ export function renderHome(root, { go, onSettings }) {
           { class: 'home__footer-right' },
           h('span', {}, 'No accounts. No tracking.'),
           h('span', { class: 'dot', 'aria-hidden': 'true' }),
-          h('span', { class: 'home__footer-ai' }, icon('sparkle'), 'AI by Grok')
+          h('span', { class: 'home__footer-ai' }, icon('sparkle'), `AI by ${aiLabel()}`)
         )
       )
     )

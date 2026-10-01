@@ -57,7 +57,11 @@ export function createResult(r, q, { aiEnabled }) {
         )
       )
     ),
-    h('h3', { class: 'result__title' }, h('a', { href: r.url, rel: 'noopener', 'data-result': '' }, r.title)),
+    h(
+      'h3',
+      { class: 'result__title' },
+      h('a', { href: r.url, target: '_blank', rel: 'noopener', 'data-result': '' }, r.title)
+    ),
     r.snippet || r.date
       ? h(
           'p',

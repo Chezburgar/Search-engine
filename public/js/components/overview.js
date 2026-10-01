@@ -1,5 +1,5 @@
 import { h, icon, clear, copyText, fill } from '../lib/dom.js';
-import { stream, safe } from '../lib/api.js';
+import { stream, safe, aiLabel } from '../lib/api.js';
 import { renderInto, toPlainText } from '../lib/markdown.js';
 import { favicon, siteName } from '../lib/format.js';
 
@@ -87,7 +87,7 @@ export function createOverview({ q, kind = 'web', manual = false, onFollowUp, on
       { class: 'ai-card__head' },
       h('span', { class: 'ai-badge' }, icon('sparkle')),
       h('h2', { class: 'ai-card__title' }, title),
-      h('span', { class: 'ai-card__tag' }, 'Grok'),
+      h('span', { class: 'ai-card__tag' }, aiLabel()),
       h('div', { class: 'ai-card__tools' }, copyBtn, regenBtn)
     ),
     body,

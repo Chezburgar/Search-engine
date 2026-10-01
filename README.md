@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">Spark</h1>
-<p align="center"><b>Search the web with a spark of intelligence.</b><br/>A fast, good-looking search engine with Grok-powered AI built into every page.</p>
+<p align="center"><b>Search the web with a spark of intelligence.</b><br/>A fast, good-looking search engine with AI (Groq or xAI Grok) built into every page.</p>
 
 ---
 
@@ -17,10 +17,11 @@
 - **Images** tab with a justified grid, infinite scroll and a lightbox viewer
 - **News** tab with the latest headlines
 
-**Spark AI (Grok, via the xAI API)**
+**Spark AI (Groq or xAI Grok)**
 - **Spark Overview**: a streamed answer at the top of results, grounded in the top web results *and the text of the top pages*, with numbered citation chips you can hover and click
 - **Ask a follow-up** from the overview to continue the conversation in the Spark AI tab
 - **Spark AI tab**: conversational search. Each question runs a fresh web search, shows source cards, and streams a cited answer, followed by suggested follow-ups
+- **Image questions**: attach, paste or drop up to 4 images in the chat, or use the image button in the search box. Images are resized in the browser and sent to a vision model
 - **People also ask**: AI-generated questions that expand into cited answers
 - **Summarize** any result: Spark reads the page and writes a TL;DR
 - **Spark Briefing** on the News tab: a summary of the latest headlines
@@ -44,9 +45,9 @@ npm start                 # http://localhost:3000
 
 | Variable | Purpose |
 | --- | --- |
-| `XAI_API_KEY` | **Required for AI features.** Your key from [console.x.ai](https://console.x.ai). |
-| `XAI_MODEL` | Optional. Pins a Grok model. If unset, Spark picks the newest *fast* Grok model your key can use. |
-| `XAI_CHAT_MODEL` | Optional. A different model for the Spark AI chat tab, e.g. a larger reasoning model. |
+| `GROQ_API_KEY` | **AI features**, option 1: a [Groq](https://console.groq.com) key (`gsk_…`). Fast, with a free tier. Used if set. |
+| `XAI_API_KEY` | **AI features**, option 2: an [xAI](https://console.x.ai) Grok key (`xai-…`). A key in the wrong variable still works; the prefix decides. |
+| `AI_MODEL` / `AI_CHAT_MODEL` / `AI_VISION_MODEL` | Optional. Pin models. Otherwise Spark lists the models your key can use and picks fast ones (Groq: GPT-OSS for text, Qwen 3.6 for images). |
 | `KEENABLE_API_KEY` | Recommended. [Keenable](https://keenable.ai) web search key. Without one, Spark uses Keenable's keyless endpoint (rate limited per IP), then DuckDuckGo, Bing and Wikipedia. |
 | `BRAVE_API_KEY` | Optional. [Brave Search API](https://brave.com/search/api/) key; when set it is tried before Keenable and also powers news and images. |
 | `PORT` / `HOST` | Where to listen (default `3000` / `0.0.0.0`). |
@@ -88,7 +89,7 @@ site and deploys it on every push (or from Actions → *Deploy to GitHub Pages* 
 workflow*). Keys come from repository secrets, so they never enter git history. One-time setup:
 
 1. **Settings → Secrets and variables → Actions → New repository secret**: add
-   `XAI_API_KEY` and `KEENABLE_API_KEY`.
+   `GROQ_API_KEY` (or `XAI_API_KEY`) and `KEENABLE_API_KEY`.
 2. **Settings → Pages → Build and deployment → Source**: choose **GitHub Actions**.
 
 > **The keys are public on Pages.** The build writes them into `spark-config.js`, which
@@ -101,9 +102,11 @@ To build locally: `npm run build:pages` writes `dist/` (serve it with any static
 `npm run deploy:pages -- --no-keys` pushes a keyless build to the `gh-pages` branch;
 GitHub's push protection rejects builds that contain the xAI key, by design.
 
-Compared with the server, the static build has no DuckDuckGo/Bing fallback (Wikipedia
-is the fallback), takes suggestions from Wikipedia, gets news from Keenable, has no
-per-visitor rate limiting, and needs the APIs to accept browser (CORS) requests.
+Every API is called from the visitor's browser, so it must accept cross-origin (CORS)
+requests. Groq does. If Keenable refuses, Spark notices and switches to Groq's built-in web
+search (Compound) for results, news and page summaries; Wikipedia is the last resort.
+Compared with the server, the static build has no DuckDuckGo/Bing fallback, takes
+suggestions from Wikipedia, and has no per-visitor rate limiting.
 
 ## Project layout
 

@@ -1,5 +1,6 @@
-import { h, icon, clear, copyText, fill } from '../lib/dom.js';
-import { stream, getJSON, safe } from '../lib/api.js';
+import { h, icon, clear, copyText, fill, toast } from '../lib/dom.js';
+import { stream, getJSON, safe, aiLabel } from '../lib/api.js';
+import { MAX_ATTACH, pickImages, imageFiles, toDataUrls } from '../lib/images.js';
 import { session } from '../lib/store.js';
 import { renderInto, toPlainText } from '../lib/markdown.js';
 import { favicon, siteName } from '../lib/format.js';
@@ -30,8 +31,8 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
       emptyState({
         title: 'Spark AI is not configured',
         text: STATIC
-          ? 'This site was published without an xAI key, so the AI chat is unavailable.'
-          : 'Add your xAI API key as XAI_API_KEY in the .env file and restart the server to chat with Spark.',
+          ? 'This site was published without an AI key, so the AI chat is unavailable.'
+          : 'Add GROQ_API_KEY (or XAI_API_KEY) to the .env file and restart the server to chat with Spark.',
         actions: [
           h(
             'button',
@@ -47,9 +48,10 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
 
   const key = `spark:thread:${q.toLowerCase()}`;
   const seed = handoff.take(q);
-  let turns = seed ? [seed.seed] : session.get(key) || [];
+  let turns = seed?.seed ? [seed.seed] : seed ? [] : session.get(key) || [];
   let controller = null;
   let busy = false;
+  let attachments = []; // data URLs waiting to be sent
 
   const thread = h('div', { class: 'thread' });
   const followups = h('div', { class: 'followups', hidden: true });
@@ -65,23 +67,102 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
     { class: 'composer__send', type: 'submit', 'aria-label': 'Send', disabled: true },
     icon('arrowUp')
   );
+  const attachBtn = h(
+    'button',
+    { class: 'composer__attach', type: 'button', title: 'Add images', 'aria-label': 'Add images' },
+    icon('image')
+  );
+  const tray = h('div', { class: 'composer__tray', hidden: true });
   const composer = h(
     'form',
     { class: 'composer' },
-    h('div', { class: 'composer__box' }, icon('sparkle', 'composer__icon'), textarea, sendBtn),
+    h('div', { class: 'composer__box' }, tray, h('div', { class: 'composer__row' }, attachBtn, textarea, sendBtn)),
     h(
       'p',
       { class: 'composer__note' },
-      'Spark AI uses Grok and live web results. It can make mistakes — check important info.'
+      `Spark AI uses ${aiLabel()} and live web results. You can add images. It can make mistakes — check important info.`
     )
   );
-  root.replaceChildren(h('div', { class: 'ai-page' }, thread, followups, composer));
+  const page = h('div', { class: 'ai-page' }, thread, followups, composer);
+  root.replaceChildren(page);
 
+  const canSend = () => Boolean(textarea.value.trim() || attachments.length);
   const autosize = () => {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-    sendBtn.disabled = !busy && !textarea.value.trim();
+    sendBtn.disabled = !busy && !canSend();
   };
+
+  function paintTray() {
+    fill(
+      tray,
+      attachments.map((src, i) =>
+        h(
+          'div',
+          { class: 'thumb' },
+          h('img', { src, alt: `Attachment ${i + 1}` }),
+          h(
+            'button',
+            {
+              class: 'thumb__remove',
+              type: 'button',
+              'aria-label': 'Remove image',
+              on: {
+                click: () => {
+                  attachments.splice(i, 1);
+                  paintTray();
+                },
+              },
+            },
+            icon('x')
+          )
+        )
+      )
+    );
+    tray.hidden = !attachments.length;
+    attachBtn.disabled = attachments.length >= MAX_ATTACH;
+    autosize();
+  }
+
+  async function addImages(files) {
+    if (!files.length) return;
+    const room = MAX_ATTACH - attachments.length;
+    if (room <= 0) return toast(`You can attach up to ${MAX_ATTACH} images.`);
+    try {
+      attachments.push(...(await toDataUrls(files, room)));
+      if (files.length > room) toast(`Only ${MAX_ATTACH} images can be attached.`);
+    } catch (err) {
+      toast(err.message);
+    }
+    paintTray();
+    textarea.focus();
+  }
+
+  attachBtn.addEventListener('click', async () => addImages(await pickImages()));
+  textarea.addEventListener('paste', (e) => {
+    const files = imageFiles(e.clipboardData);
+    if (files.length) {
+      e.preventDefault();
+      addImages(files);
+    }
+  });
+  page.addEventListener('dragover', (e) => {
+    if ([...(e.dataTransfer?.types || [])].includes('Files')) {
+      e.preventDefault();
+      composer.classList.add('is-dropping');
+    }
+  });
+  page.addEventListener('dragleave', (e) => {
+    if (!page.contains(e.relatedTarget)) composer.classList.remove('is-dropping');
+  });
+  page.addEventListener('drop', (e) => {
+    composer.classList.remove('is-dropping');
+    const files = imageFiles(e.dataTransfer);
+    if (files.length) {
+      e.preventDefault();
+      addImages(files);
+    }
+  });
   textarea.addEventListener('input', autosize);
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -92,11 +173,13 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
   composer.addEventListener('submit', (e) => {
     e.preventDefault();
     if (busy) return controller?.abort();
-    const v = textarea.value.trim();
-    if (!v) return;
+    if (!canSend()) return;
+    const images = attachments;
+    const v = textarea.value.trim() || "What's in this image?";
+    attachments = [];
     textarea.value = '';
-    autosize();
-    ask(v);
+    paintTray();
+    ask(v, { images });
   });
 
   const setBusy = (b) => {
@@ -104,12 +187,13 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
     sendBtn.replaceChildren(icon(b ? 'stop' : 'arrowUp'));
     sendBtn.setAttribute('aria-label', b ? 'Stop generating' : 'Send');
     sendBtn.classList.toggle('is-stop', b);
-    sendBtn.disabled = !b && !textarea.value.trim();
+    sendBtn.disabled = !b && !canSend();
   };
 
   const save = () =>
     session.set(
       key,
+      // Images are left out: they would quickly fill the browser's session storage.
       turns.filter((t) => t.text).map(({ q: tq, text, sources }) => ({ q: tq, text, sources }))
     );
 
@@ -127,6 +211,13 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
       'article',
       { class: 'turn rise' },
       h('h2', { class: 'turn__q' }, turn.q),
+      turn.images?.length
+        ? h(
+            'div',
+            { class: 'turn__images' },
+            turn.images.map((src) => h('img', { src, alt: 'Attached image', loading: 'lazy' }))
+          )
+        : null,
       sourcesBlock,
       h('div', { class: 'turn__block' }, h('div', { class: 'turn__label' }, icon('sparkle'), 'Answer'), answer),
       actions
@@ -173,14 +264,14 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
     return { el, answer, paintSources, paintActions, turn };
   }
 
-  async function ask(question, { replaceLast = false } = {}) {
+  async function ask(question, { replaceLast = false, images = [] } = {}) {
     if (replaceLast) {
       turns.pop();
       views.pop()?.el.remove();
     }
     const prev = views[views.length - 1];
     if (prev?.turn.text) prev.paintActions(false);
-    const turn = { q: question, text: '', sources: [] };
+    const turn = { q: question, text: '', sources: [], images };
     turns.push(turn);
     const view = turnView(turn, turns.length - 1);
     views.push(view);
@@ -196,7 +287,7 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
     let frame = 0;
     let failed = null;
     const messages = turns.flatMap((t) => [
-      { role: 'user', content: t.q },
+      { role: 'user', content: t.q, ...(t.images?.length ? { images: t.images } : {}) },
       ...(t.text ? [{ role: 'assistant', content: t.text }] : []),
     ]);
     try {
@@ -241,7 +332,7 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
                 {
                   class: 'btn btn--ghost btn--sm',
                   type: 'button',
-                  on: { click: () => ask(question, { replaceLast: true }) },
+                  on: { click: () => ask(question, { replaceLast: true, images }) },
                 },
                 icon('refresh'),
                 'Retry'
@@ -259,7 +350,7 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
 
   function regenerate() {
     const last = turns[turns.length - 1];
-    if (last && !busy) ask(last.q, { replaceLast: true });
+    if (last && !busy) ask(last.q, { replaceLast: true, images: last.images || [] });
   }
 
   async function loadFollowups(question) {
@@ -287,7 +378,7 @@ export function renderAI(root, { q, signal, go, ai, handoff }) {
 
   const views = turns.map((t, i) => turnView(t, i));
   thread.append(...views.map((v) => v.el));
-  if (seed?.ask) ask(seed.ask);
+  if (seed?.ask) ask(seed.ask, { images: seed.images || [] });
   else if (!turns.length) ask(q);
   else {
     save();
