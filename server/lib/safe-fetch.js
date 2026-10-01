@@ -32,7 +32,7 @@ export function isPrivateAddress(ip) {
   );
 }
 
-async function assertPublic(url) {
+export async function assertPublic(url) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new HttpError(400, 'Only http(s) URLs are allowed');
   if (url.username || url.password) throw new HttpError(400, 'URLs with credentials are not allowed');
   const host = url.hostname.replace(/^\[|\]$/g, '');

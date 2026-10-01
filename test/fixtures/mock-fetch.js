@@ -161,7 +161,7 @@ const text = (body, type = 'text/html') => new Response(body, { status: 200, hea
 
 async function mockFetch(input, init = {}) {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
-  calls.push({ url: url.href, method: init.method || 'GET', body: init.body });
+  calls.push({ url: url.href, method: init.method || 'GET', body: init.body, headers: init.headers || {} });
   await sleep(DELAY * 2);
   const host = url.hostname;
 
@@ -185,6 +185,32 @@ async function mockFetch(input, init = {}) {
     const answer = ANSWERS[kind](lastUser.split('\n')[0].replace(/^Query: /, ''));
     if (!body.stream) return json({ choices: [{ message: { role: 'assistant', content: answer } }] });
     return new Response(sseStream(answer), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  if (host === 'api.keenable.ai') {
+    if (url.pathname.startsWith('/v1/search')) {
+      const body = JSON.parse(init.body || '{}');
+      if (/fallbacktest/.test(body.query)) return json({ error: 'Internal error' }, 500);
+      const results = [];
+      for (let i = 0; i < Math.min(body.max_results || 10, 45); i++) {
+        const [title, url, snippet] = SITES[i % SITES.length];
+        results.push({
+          url: i < SITES.length ? url : `${url}?page=${i}`,
+          title: i < SITES.length ? title : `${title} (${i + 1})`,
+          description: '',
+          snippet: `Skip to main content\nMenu\nHome About Contact\n${snippet} Researchers continue to study how ${body.query} shapes the universe.\nMore about ${body.query}: astronomers use telescopes and gravitational waves to observe these objects in detail.`,
+          published_at: i === 2 ? '2026-08-14T00:00:00Z' : undefined,
+        });
+      }
+      return json({ results });
+    }
+    if (url.pathname.startsWith('/v1/fetch')) {
+      return json({
+        url: url.searchParams.get('url'),
+        title: 'Black holes explained',
+        content:
+          '# Black holes\n\nBlack holes form when massive stars collapse at the end of their lives, compressing their cores into an incredibly small space. Supermassive black holes sit at the centers of most large galaxies, including the Milky Way. Astronomers detect them through their gravitational effect on nearby stars and gas.',
+      });
+    }
   }
   if (host === 'html.duckduckgo.com') {
     const q = url.searchParams.get('q') || new URLSearchParams(init.body || '').get('q') || '';

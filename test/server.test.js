@@ -1,6 +1,7 @@
 // End-to-end API tests with all upstream services (xAI, search providers) mocked.
 process.env.XAI_API_KEY = 'test-key';
 process.env.XAI_MODEL = '';
+process.env.KEENABLE_API_KEY = 'keen_test';
 process.env.MOCK_DELAY = '0';
 process.env.AI_RATE_LIMIT = '1000';
 
@@ -65,22 +66,43 @@ test('status reports AI enabled with an auto-selected model', async () => {
   assert.equal(data.ai.model, 'grok-4-1-fast-non-reasoning');
 });
 
-test('search returns normalised web results and an overview hint', async () => {
+test('search uses Keenable with the API key and returns clean snippets', async () => {
+  const before = calls.length;
   const res = await fetch(`${base}/api/search?q=how+do+black+holes+form`);
   const data = await res.json();
   assert.equal(res.status, 200);
-  assert.equal(data.provider, 'DuckDuckGo');
-  assert.equal(data.results.length, 8);
+  assert.equal(data.provider, 'Keenable');
+  assert.equal(data.results.length, 20);
   assert.equal(data.results[0].host, 'science.nasa.gov');
+  assert.doesNotMatch(data.results[0].snippet, /Skip to main content/);
+  assert.ok(
+    data.results.every((r) => !('extract' in r)),
+    'page text stays on the server'
+  );
+  assert.equal(data.results[2].date, '2026-08-14');
   assert.ok(data.next);
   assert.equal(data.overview, true);
+  const call = calls.slice(before).find((c) => c.url.includes('keenable'));
+  assert.equal(call.url, 'https://api.keenable.ai/v1/search');
+  assert.equal(call.headers['X-API-Key'], 'keen_test');
+  assert.equal(JSON.parse(call.body).max_results, 20);
 });
 
-test('search paginates with the provider cursor', async () => {
+test('Keenable pagination asks for more results and skips those already shown', async () => {
   const first = await (await fetch(`${base}/api/search?q=paging+test`)).json();
   const before = calls.length;
-  const res = await fetch(`${base}/api/search?q=paging+test&cursor=${encodeURIComponent(first.next)}`);
-  const data = await res.json();
+  const data = await (await fetch(`${base}/api/search?q=paging+test&cursor=${encodeURIComponent(first.next)}`)).json();
+  assert.equal(data.results.length, 20);
+  assert.match(data.results[0].title, /\(21\)/);
+  assert.equal(JSON.parse(calls.slice(before).find((c) => c.url.includes('keenable')).body).max_results, 40);
+});
+
+test('falls back to DuckDuckGo (with its own pagination) when Keenable fails', async () => {
+  const first = await (await fetch(`${base}/api/search?q=fallbacktest`)).json();
+  assert.equal(first.provider, 'DuckDuckGo');
+  assert.equal(first.results.length, 8);
+  const before = calls.length;
+  const data = await (await fetch(`${base}/api/search?q=fallbacktest&cursor=${encodeURIComponent(first.next)}`)).json();
   assert.equal(data.results.length, 8);
   const post = calls.slice(before).find((c) => c.url.includes('duckduckgo'));
   assert.equal(post.method, 'POST');
@@ -114,13 +136,16 @@ test('overview streams sources, tokens and done — and is cached', async () => 
   assert.equal(calls.filter((c) => c.url.includes('chat/completions')).length, xaiBefore);
 });
 
-test('overview prompt includes numbered sources and page excerpts', async () => {
+test('overview prompt is grounded in Keenable page text without refetching pages', async () => {
+  const before = calls.length;
   await (await fetch(`${base}/api/overview?q=supernova+remnants`)).text();
   const call = calls.filter((c) => c.url.includes('chat/completions')).at(-1);
   const body = JSON.parse(call.body);
   assert.equal(body.model, 'grok-4-1-fast-non-reasoning');
   assert.equal(body.stream, true);
   assert.match(body.messages[1].content, /\[1\] NASA Science/);
+  assert.match(body.messages[1].content, /Excerpt:\n.*supernova remnants/);
+  assert.equal(calls.slice(before).filter((c) => c.url.includes('science.nasa.gov')).length, 0);
 });
 
 test('news briefing and related questions', async () => {
@@ -152,7 +177,7 @@ test('chat grounds each turn in web sources', async () => {
   assert.equal(body.messages[0].role, 'system');
   assert.equal(body.messages.length, 4);
   assert.match(body.messages[3].content, /Web sources for this message/);
-  const searched = new URL(calls.filter((c) => c.url.includes('duckduckgo')).at(-1).url).searchParams.get('q');
+  const searched = JSON.parse(calls.filter((c) => c.url.includes('keenable.ai/v1/search')).at(-1).body).query;
   assert.equal(searched, 'black holes how are they detected?');
 });
 
@@ -165,6 +190,20 @@ test('chat rejects malformed requests', async () => {
   assert.equal(res.status, 400);
   const bad = await fetch(`${base}/api/chat`, { method: 'POST', body: 'not json' });
   assert.equal(bad.status, 400);
+});
+
+test('summaries read pages through Keenable when a key is set', async () => {
+  const before = calls.length;
+  const evs = events(
+    await (
+      await fetch(`${base}/api/summarize?url=${encodeURIComponent('https://science.nasa.gov/universe/black-holes/')}`)
+    ).text()
+  );
+  assert.ok(evs.some((e) => e.name === 'token'));
+  const fetched = calls.slice(before).find((c) => c.url.includes('keenable.ai/v1/fetch'));
+  assert.equal(new URL(fetched.url).searchParams.get('url'), 'https://science.nasa.gov/universe/black-holes/');
+  const prompt = JSON.parse(calls.filter((c) => c.url.includes('chat/completions')).at(-1).body).messages[1].content;
+  assert.match(prompt, /Supermassive black holes sit at the centers/);
 });
 
 test('summaries refuse internal addresses', async () => {

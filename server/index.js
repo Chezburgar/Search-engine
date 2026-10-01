@@ -13,6 +13,12 @@ import { getKnowledge } from './providers/knowledge.js';
 import { getWeather, parseWeatherQuery } from './providers/weather.js';
 import { aiEnabled, aiStatus, complete, streamChat } from './ai/grok.js';
 import { buildSources, publicSources, readPage } from './ai/context.js';
+import { forDisplay } from './providers/normalize.js';
+import { assertPublic } from './lib/safe-fetch.js';
+import { isMath, isNavigational } from '../public/js/shared/intent.js';
+import { chatSearchQuery, newsSources } from '../public/js/shared/sources.js';
+
+export { isNavigational };
 import {
   chatSystemPrompt,
   chatUserMessage,
@@ -177,26 +183,17 @@ async function webResults(q, safe, cursor) {
 
 const knowledgeFor = (q) => cache.knowledge.wrap(q.toLowerCase(), () => getKnowledge(q).catch(() => null));
 
-const NAV_WORDS = /\s+(login|log in|sign in|signin|sign up|website|homepage|home page|official site|app|account)$/i;
-
-export function isNavigational(q, results) {
-  const words = q.trim().split(/\s+/);
-  if (words.length > 3) return false;
-  const target = q
-    .toLowerCase()
-    .replace(NAV_WORDS, '')
-    .replace(/^www\./, '')
-    .replace(/\.(com|org|net|io|co)$/, '')
-    .replace(/[\s.-]/g, '');
-  const label = (results[0]?.host || '').split('.').slice(-2, -1)[0]?.replace(/-/g, '') || '';
-  return target.length >= 3 && label === target;
-}
-
-const isMath = (q) => /^[\d\s+\-*/^().,%×÷πe]+$/i.test(q) && /\d/.test(q) && /[+\-*/^%×÷]/.test(q);
-
 /* --------------------------------- routes --------------------------------- */
 
 const routes = {
+  // Tells the frontend it is talking to this server (the GitHub Pages build ships its own).
+  'GET /spark-config.js'(req, res) {
+    send(res, 200, 'window.SPARK_CONFIG = { mode: "server" };\n', {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-cache',
+    });
+  },
+
   // Lets browsers offer "Add Spark as a search engine".
   'GET /opensearch.xml'(req, res) {
     const proto =
@@ -245,7 +242,7 @@ const routes = {
     ]);
     json(res, 200, {
       query: q,
-      results: web.results,
+      results: forDisplay(web.results),
       provider: web.provider,
       next: web.next || null,
       weather: weather || null,
@@ -316,14 +313,7 @@ const routes = {
       let messages;
       if (kind === 'news') {
         const news = await cache.news.wrap(q.toLowerCase(), () => searchNews(q));
-        sources = news.results.slice(0, 10).map((r, i) => ({
-          n: i + 1,
-          title: r.title,
-          url: r.url,
-          host: r.source || r.host,
-          date: r.date ? r.date.slice(0, 10) : null,
-          snippet: r.snippet,
-        }));
+        sources = newsSources(news.results);
         if (!sources.length) {
           stream.send('error', { code: 'no_sources', message: 'There are no recent headlines to brief you on.' });
           return stream.end();
@@ -393,12 +383,7 @@ const routes = {
       let sources = [];
       if (body.search !== false) {
         stream.send('status', { stage: 'searching' });
-        const firstUser = history.find((m) => m.role === 'user').content;
-        const question = last.content.trim();
-        const searchQuery =
-          firstUser !== last.content && question.split(/\s+/).length < 7
-            ? `${firstUser.slice(0, 120)} ${question}`.slice(0, 220)
-            : question.slice(0, 300);
+        const searchQuery = chatSearchQuery(history);
         const web = await webResults(cleanQuery(searchQuery), safe).catch(() => ({ results: [] }));
         stream.send('status', { stage: 'reading', count: Math.min(web.results.length, 6) });
         sources = await buildSources(searchQuery, web.results, { limit: 6, deep: 2, budgetMs: 2200 });
@@ -443,6 +428,7 @@ const routes = {
       stream.send('status', { stage: 'reading' });
       let page;
       try {
+        await assertPublic(target);
         page = await readPage(target.href, stream.signal);
       } catch (err) {
         stream.send('error', { code: 'unreadable', message: `Spark couldn't open that page (${err.message}).` });

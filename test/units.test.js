@@ -11,6 +11,8 @@ import { isPrivateAddress } from '../server/lib/safe-fetch.js';
 import { Cache } from '../server/lib/cache.js';
 import { breadcrumb, normalizeResult } from '../server/providers/normalize.js';
 import { renderMarkdown } from '../public/js/lib/markdown.js';
+import { mapKeenableResults, keenableRequest, pageWindow, hasMore } from '../public/js/shared/keenable.js';
+import { chatSearchQuery } from '../public/js/shared/sources.js';
 import { evaluate, looksLikeMath } from '../public/js/lib/calc.js';
 
 const DDG = `
@@ -188,4 +190,52 @@ test('calculator evaluates safely', () => {
   assert.equal(looksLikeMath('2024-01-05'), false);
   assert.equal(looksLikeMath('covid-19'), false);
   assert.equal(looksLikeMath('3 * 7'), true);
+});
+
+test('Keenable mapping builds query-focused snippets and keeps page text for AI', () => {
+  const [r] = mapKeenableResults(
+    {
+      results: [
+        {
+          url: 'https://example.com/a',
+          title: 'Rust',
+          description: '',
+          snippet:
+            'Skip to content\nMenu\nHome\nRust is a systems programming language focused on safety and speed.\nUnrelated footer text goes here and is long enough to count.',
+          published_at: '2026-01-02T03:04:05Z',
+        },
+        { title: 'no url' },
+      ],
+    },
+    'rust language safety'
+  );
+  assert.match(r.snippet, /^Rust is a systems programming language/);
+  assert.ok(r.extract.includes('focused on safety'));
+  assert.equal(r.date, '2026-01-02');
+  assert.throws(() => mapKeenableResults({}, 'q'));
+
+  const keyed = keenableRequest({ apiKey: 'keen_x', path: '/v1/search', body: { query: 'q' } });
+  assert.equal(keyed.url, 'https://api.keenable.ai/v1/search');
+  assert.equal(keyed.init.headers['X-API-Key'], 'keen_x');
+  assert.equal(keyed.init.redirect, 'error');
+  const keyless = keenableRequest({ path: '/v1/fetch', query: { url: 'https://a.com' } });
+  assert.equal(keyless.url, 'https://api.keenable.ai/v1/fetch/public?url=https%3A%2F%2Fa.com');
+  assert.equal(keyless.init.headers['X-Keenable-Title'], 'Spark Search');
+  assert.ok(!('X-API-Key' in keyless.init.headers));
+
+  assert.deepEqual(pageWindow(2), { want: 40, from: 20 });
+  assert.equal(hasMore(40, 40), true);
+  assert.equal(hasMore(50, 50), false);
+});
+
+test('chat follow-ups search with the conversation topic', () => {
+  assert.equal(chatSearchQuery([{ role: 'user', content: 'black holes' }]), 'black holes');
+  assert.equal(
+    chatSearchQuery([
+      { role: 'user', content: 'black holes' },
+      { role: 'assistant', content: '...' },
+      { role: 'user', content: 'how big?' },
+    ]),
+    'black holes how big?'
+  );
 });

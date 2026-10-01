@@ -2,6 +2,10 @@ import { config } from '../config.js';
 import { fetchJSON, fetchText, qs, BOT_UA } from '../lib/http.js';
 import { attr, decodeEntities, stripTags, tagText } from '../lib/html.js';
 import { dedupe, firstSuccessful, normalizeResult } from './normalize.js';
+import { encodeCursor, decodeCursor } from './cursor.js';
+import { keenable } from './keenable.js';
+
+export { encodeCursor, decodeCursor };
 
 const SAFE = {
   ddg: { strict: '1', moderate: '-1', off: '-2' },
@@ -10,15 +14,6 @@ const SAFE = {
 function regionParts(region = config.region) {
   const [country = 'us', lang = 'en'] = region.toLowerCase().split('-');
   return { country, lang };
-}
-
-export const encodeCursor = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
-export function decodeCursor(str) {
-  try {
-    return JSON.parse(Buffer.from(String(str), 'base64url').toString('utf8'));
-  } catch {
-    return null;
-  }
 }
 
 /* ---------------------------------- Brave --------------------------------- */
@@ -203,7 +198,7 @@ const wikipedia = {
   },
 };
 
-export const WEB_PROVIDERS = [brave, duckduckgo, bing, wikipedia];
+export const WEB_PROVIDERS = [brave, keenable, duckduckgo, bing, wikipedia];
 
 export async function searchWeb(q, { cursor, safe = 'moderate' } = {}) {
   if (cursor) {

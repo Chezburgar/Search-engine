@@ -49,6 +49,10 @@ export const config = {
     chatModel: (process.env.XAI_CHAT_MODEL || '').trim(),
   },
   braveKey: (process.env.BRAVE_API_KEY || '').trim(),
+  keenable: {
+    apiKey: (process.env.KEENABLE_API_KEY || '').trim(),
+    baseUrl: (process.env.KEENABLE_BASE_URL || 'https://api.keenable.ai').replace(/\/+$/, ''),
+  },
   aiRateLimit: {
     max: num(process.env.AI_RATE_LIMIT, 120),
     windowMs: 10 * 60 * 1000,
