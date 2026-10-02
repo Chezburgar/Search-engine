@@ -15,6 +15,11 @@ test('the games catalog has every requested game, safely addressed', () => {
       'BitLife',
       'Snow Rider 3D',
       'Crossy Road',
+      'Bit Planes',
+      'WorldGuessr',
+      'Web Dashers',
+      'Eaglercraft 1.8',
+      'Slope',
     ]
   );
   assert.equal(new Set(GAMES.map((g) => g.id)).size, GAMES.length);
@@ -22,7 +27,7 @@ test('the games catalog has every requested game, safely addressed', () => {
     assert.match(g.id, /^[a-z0-9-]+$/, g.id);
     const url = new URL(g.url);
     assert.equal(url.protocol, 'https:', g.id);
-    assert.match(url.hostname, /\.github\.io$/, g.id);
+    assert.match(url.hostname, /\.github\.io$|^www\.worldguessr\.com$/, g.id);
     // Gaming Escape's iframe?url= wrapper is skipped: games load directly, in one frame.
     assert.doesNotMatch(g.url, /iframe\?url=/, g.id);
     if (g.thumb) assert.equal(new URL(g.thumb).protocol, 'https:', g.id);
